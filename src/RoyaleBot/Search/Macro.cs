@@ -13,12 +13,17 @@ namespace Royale
         public int GiantWhenTowers = 2;    // от скольких чужих башен нужны гиганты
         public int SecondBarracksIncome = 6;
         public int KnightZone = 250;       // не строить шахту, если чужой рыцарь ближе
+        public int MaxTowersCalm = 3;      // без живых чужих рыцарей новые башни сверх этого не предлагаются
+        public int TargetIncome = 6;       // пока доход меньше — фаза экономики: башни только при чужой казарме (до TowersEarly) или живых рыцарях
+        public int TowersEarly = 2;
+        public int UpgradeCalmBelow = 350; // без живых чужих рыцарей башню качаем только ниже этого HP
+        public int FarMineSites = 2;       // всегда добавлять столько ближайших свободных сайтов с золотом (цель для похода)
 
         private readonly List<int> _train = new List<int>();
         // буферы под TRAIN по длине, отдельно для каждого игрока: без аллокаций в поиске (массив читается только внутри Step)
         private readonly int[][][] _trainBuf = { new int[16][], new int[16][] };
-        private readonly int[] _near = new int[8];
-        private readonly double[] _nearD = new double[8];
+        private readonly int[] _near = new int[12];
+        private readonly double[] _nearD = new double[12];
 
         /// <summary>TRAIN: гигант при нужде, потом все свободные казармы рыцарей, пока хватает золота.</summary>
         public int[] Train(SimState s, int me)
@@ -79,6 +84,17 @@ namespace Royale
                 else if (st.Structure == StructureType.Mine) income += st.Rate;
             }
             int wantKnightBarracks = 1 + (income >= SecondBarracksIncome ? 1 : 0);
+            int myTowers = 0;
+            for (int i = 0; i < s.Sites.Length; i++) if (s.Sites[i].Owner == me && s.Sites[i].Structure == StructureType.Tower) myTowers++;
+            bool knightsAlive = false;
+            for (int i = 0; i < s.CreepCount[1 - me]; i++) if (s.Creeps[1 - me][i].Type == 0) { knightsAlive = true; break; }
+            bool enemyKnightBarracks = false;
+            for (int i = 0; i < s.Sites.Length; i++)
+                if (s.Sites[i].Structure == StructureType.Barracks && s.Sites[i].Owner != me && s.Sites[i].CreepType == 0) { enemyKnightBarracks = true; break; }
+            // фазы: экономика (доход < TargetIncome) — башни только по необходимости; дальше до MaxTowersCalm; при рыцарях без ограничений
+            bool towersAllowed = knightsAlive
+                || (income >= TargetIncome && myTowers < MaxTowersCalm)
+                || (enemyKnightBarracks && myTowers < TowersEarly);
 
             int k = Math.Min(NearSites, _near.Length);
             int found = 0;
@@ -97,6 +113,28 @@ namespace Royale
                 }
                 _near[pos] = i; _nearD[pos] = d;
             }
+            // ближайшие свободные сайты с золотом, даже далёкие: цель для похода за экономикой
+            if (Rules.Mines)
+            {
+                for (int extra = 0; extra < FarMineSites && found < _near.Length; extra++)
+                {
+                    int best = -1; double bestD = double.MaxValue;
+                    double hx = me == 0 ? 200 : Consts.WorldWidth - 200, hy = me == 0 ? 200 : Consts.WorldHeight - 200;
+                    for (int i = 0; i < s.Sites.Length; i++)
+                    {
+                        SimSite st = s.Sites[i];
+                        if (st.Structure != StructureType.None || st.Gold == 0) continue;
+                        if (SimState.D2(st.X, st.Y, hx, hy) > SimState.D2(st.X, st.Y, Consts.WorldWidth - hx, Consts.WorldHeight - hy)) continue;
+                        bool dup = false;
+                        for (int j = 0; j < found; j++) if (_near[j] == i) { dup = true; break; }
+                        if (dup) continue;
+                        double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
+                        if (d < bestD) { bestD = d; best = i; }
+                    }
+                    if (best < 0) break;
+                    _near[found] = best; _nearD[found] = bestD; found++;
+                }
+            }
 
             for (int j = 0; j < found && n < buf.Length - 5; j++)
             {
@@ -105,7 +143,7 @@ namespace Royale
                 if (takeable)
                 {
                     if (Rules.Mines && st.Gold != 0 && !EnemyKnightNear(s, me, st.X, st.Y)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
-                    if (Rules.Towers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+                    if (Rules.Towers && towersAllowed) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
                     if (knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
                     if (Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
                 }
@@ -115,7 +153,7 @@ namespace Royale
                 }
                 else if (st.Structure == StructureType.Tower)
                 {
-                    if (st.Hp <= Consts.TowerHpMax - Consts.TowerHpIncrement) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+                    if (st.Hp <= Consts.TowerHpMax - Consts.TowerHpIncrement && (st.Hp < UpgradeCalmBelow || knightsAlive)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
                 }
             }
             return n;

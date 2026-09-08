@@ -62,6 +62,7 @@ def summarize(game, leagues, my_agent):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--handle", default=None)
+    ap.add_argument("--agent", type=int, default=None, help="agentId напрямую (если игрока нет в топ-1000 лидерборда)")
     ap.add_argument("--league", type=int, default=3)
     ap.add_argument("--agents", type=int, default=20)
     ap.add_argument("--max-games", type=int, default=50)
@@ -74,7 +75,11 @@ def main():
     users = leaderboard()
     leagues = {u["agentId"]: u["league"]["divisionIndex"] for u in users}
     my_agent = -1
-    if args.handle:
+    if args.agent:
+        my_agent = args.agent
+        picked = [{"agentId": my_agent}]
+        print(f"agent {my_agent}", file=sys.stderr)
+    elif args.handle:
         picked = [u for u in users if (u.get("codingamer") or {}).get("publicHandle") == args.handle]
         if not picked:
             print("handle not found in the leaderboard", file=sys.stderr)

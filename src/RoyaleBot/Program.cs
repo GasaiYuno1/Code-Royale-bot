@@ -62,6 +62,11 @@ namespace Royale
                     case "sites": s.Macro.NearSites = iv; break;
                     case "giants": s.Macro.GiantWhenTowers = iv; break;
                     case "bar2": s.Macro.SecondBarracksIncome = iv; break;
+                    case "maxtowers": s.Macro.MaxTowersCalm = iv; break;
+                    case "econ": s.Macro.TargetIncome = iv; break;
+                    case "early": s.Macro.TowersEarly = iv; break;
+                    case "upcalm": s.Macro.UpgradeCalmBelow = iv; break;
+                    case "farmines": s.Macro.FarMineSites = iv; break;
                     default:
                         if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
                         break;

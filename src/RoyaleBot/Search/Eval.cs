@@ -9,9 +9,9 @@ namespace Royale
         public double Hp = 100;             // моё HP
         public double EnemyHp = 50;         // HP противника
         public double Dead = 1e6;           // смерть королевы
-        public double Tower = 1.0;          // HP моей башни
+        public double Tower = 0.25;         // HP моей башни (прокачка +96/ход не должна перевешивать поход к сайту)
         public double TowerBase = 400;      // сама башня (существует, с убыванием к концу)
-        public double TowerNeeded = 1200;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
+        public double TowerNeeded = 800;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
         public double TowerNeededCalm = 500; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
         public double Exposure = 1;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе
@@ -20,7 +20,7 @@ namespace Royale
         public int MineFarDist = 1200;
         public double EnemyTower = 0.5;     // HP чужой башни
         public double EnemyTowerBase = 300;
-        public double Mine = 3;             // за единицу будущей добычи моей шахты: min(доход × остаток ходов, золото сайта)
+        public double Mine = 4;             // за единицу будущей добычи моей шахты: min(доход × остаток ходов, золото сайта)
         public double EnemyMine = 2;        // то же для чужой шахты
         public double Gold = 4;             // золото в кармане (не больше GoldCap; без казармы ×0.2)
         public int GoldCap = 300;
@@ -30,7 +30,10 @@ namespace Royale
         public double FarKnight = 1.0;      // 1 = штраф не зависит от расстояния
         public double Giant = 2;            // HP моего гиганта
         public double EnemyGiant = 2;
-        public double NoBarracks = 5000;    // нет ни одной казармы рыцарей
+        public double NoBarracks = 5000;    // нет ни одной казармы рыцарей: половина штрафа снимается по мере подхода к свободному сайту
+        public double EconShort = 400;      // за единицу недобора дохода до EconTarget, половина снимается по мере подхода к свободному сайту с золотом на своей половине
+        public int EconTarget = 6;
+        public int ShapingDist = 1200;
         public double GiantBarracks = 1500; // есть казарма гигантов, когда у врага >= GiantWhenTowers башен
         public int GiantWhenTowers = 2;
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
@@ -63,6 +66,8 @@ namespace Royale
                 case "giant": Giant = v; break;
                 case "egiant": EnemyGiant = v; break;
                 case "nobar": NoBarracks = v; break;
+                case "econshort": EconShort = v; break;
+                case "econtarget": EconTarget = (int)v; break;
                 case "giantbar": GiantBarracks = v; break;
                 case "goldcap": GoldCap = (int)v; break;
                 case "extrabar": ExtraBarracks = v; break;
@@ -104,9 +109,18 @@ namespace Royale
             bool enemyKnightsAlive = false;
             for (int i = 0; i < s.CreepCount[e]; i++) if (s.Creeps[e][i].Type == 0) { enemyKnightsComing = true; enemyKnightsAlive = true; break; }
             double safeD2 = SimState.D2(homeX, homeY, qx, qy);
+            double enemyHomeX = Consts.WorldWidth - homeX, enemyHomeY = Consts.WorldHeight - homeY;
+            double dFree = double.MaxValue, dGold = double.MaxValue;
+            int income = 0;
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
+                if (st.Structure == StructureType.None)
+                {
+                    double d = SimState.D2(st.X, st.Y, qx, qy);
+                    if (d < dFree) dFree = d;
+                    if (st.Gold != 0 && d < dGold && SimState.D2(st.X, st.Y, homeX, homeY) < SimState.D2(st.X, st.Y, enemyHomeX, enemyHomeY)) dGold = d;
+                }
                 switch (st.Structure)
                 {
                     case StructureType.Tower:
@@ -127,6 +141,7 @@ namespace Royale
                         if (st.Gold >= 0 && st.Gold < yield) yield = st.Gold;
                         if (st.Owner == me)
                         {
+                            income += st.Rate;
                             double dHome = Math.Sqrt(SimState.D2(st.X, st.Y, homeX, homeY));
                             v += w.Mine * yield * (1 - w.MineFar * Math.Min(1.0, dHome / w.MineFarDist));
                         }
@@ -144,7 +159,11 @@ namespace Royale
                         break;
                 }
             }
-            if (knightBarracks == 0) v -= w.NoBarracks;
+            if (knightBarracks == 0)
+                v -= w.NoBarracks * (dFree == double.MaxValue ? 1.0 : 0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dFree) / w.ShapingDist));
+            int shortfall = w.EconTarget - income;
+            if (shortfall > 0 && dGold != double.MaxValue)
+                v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
             if (giantBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
             if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
             double gold = Math.Min(s.Gold[me], w.GoldCap);
