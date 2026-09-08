@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System;
 
@@ -433,6 +434,7 @@ public static class Program
 {
 public static void Main(string[] args)
 {
+System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
 var stdout = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = false };
 var stderr = Console.Error;
 var wood = new WoodStrategy();
@@ -468,11 +470,14 @@ case "towers": w.TargetTowers = iv; break;
 case "upgrade": w.TowerUpgradeBelow = iv; break;
 case "danger": w.DangerRadius = iv; break;
 case "wreach": w.TowerReach = iv; break;
+case "barlate": w.BarracksLate = iv != 0; break;
 case "depth": s.Depth = iv; break;
 case "width": s.Width = iv; break;
 case "ms": s.MaxMs = iv; break;
 case "firstms": s.FirstTurnMs = iv; break;
 case "rollout": s.RolloutTurns = iv; break;
+case "leaves": s.RolloutLeaves = iv; break;
+case "fine": s.FineDepth = iv; break;
 case "debug": s.Debug = iv != 0; break;
 case "rolloutw": s.RolloutWeight = v; break;
 case "sites": s.Macro.NearSites = iv; break;
@@ -495,9 +500,18 @@ public sealed class EvalWeights
 public double Hp = 100;
 public double EnemyHp = 50;
 public double Dead = 1e6;
-public double Tower = 2.0;
-public double EnemyTower = 1.0;
-public double Mine = 4;
+public double Tower = 1.0;
+public double TowerBase = 400;
+public double TowerNeeded = 1200;
+public double TowerNeededCalm = 500;
+public int TowerNeed = 3;
+public double Exposure = 2;
+public int SafeRadius = 250;
+public double MineFar = 0.4;
+public int MineFarDist = 1200;
+public double EnemyTower = 0.5;
+public double EnemyTowerBase = 300;
+public double Mine = 3;
 public double EnemyMine = 2;
 public double Gold = 4;
 public int GoldCap = 300;
@@ -521,6 +535,13 @@ switch (key)
 case "hp": Hp = v; break;
 case "ehp": EnemyHp = v; break;
 case "tower": Tower = v; break;
+case "towerbase": TowerBase = v; break;
+case "towerneed": TowerNeeded = v; break;
+case "towercalm": TowerNeededCalm = v; break;
+case "exposure": Exposure = v; break;
+case "safe": SafeRadius = (int)v; break;
+case "minefar": MineFar = v; break;
+case "etowerbase": EnemyTowerBase = v; break;
 case "etower": EnemyTower = v; break;
 case "mine": Mine = v; break;
 case "emine": EnemyMine = v; break;
@@ -545,6 +566,7 @@ return true;
 }
 public static class Eval
 {
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public static double Score(SimState s, int me, EvalWeights w, Random rnd)
 {
 int e = 1 - me;
@@ -555,10 +577,19 @@ if (enHp <= 0) v += w.Dead * 0.1;
 int left = Consts.MaxTurns - s.Turn;
 if (left < 1) left = 1;
 double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
-int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0;
+int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0, myTowers = 0;
 bool enemyKnightsComing = false;
 double qx = s.QueenX[me], qy = s.QueenY[me];
+double homeX = me == 0 ? 200 : Consts.WorldWidth - 200, homeY = me == 0 ? 200 : Consts.WorldHeight - 200;
 bool covered = false;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure == StructureType.Barracks && st.Owner != me && st.CreepType == 0) enemyKnightsComing = true;
+}
+bool enemyKnightsAlive = false;
+for (int i = 0; i < s.CreepCount[e]; i++) if (s.Creeps[e][i].Type == 0) { enemyKnightsComing = true; enemyKnightsAlive = true; break; }
+double safeD2 = SimState.D2(homeX, homeY, qx, qy);
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
@@ -567,16 +598,24 @@ switch (st.Structure)
 case StructureType.Tower:
 if (st.Owner == me)
 {
-v += w.Tower * st.Hp * towerF;
-if (!covered && SimState.D2(st.X, st.Y, qx, qy) < (double)st.AttackRadius * st.AttackRadius) covered = true;
+myTowers++;
+double baseV = myTowers <= w.TowerNeed ? (enemyKnightsComing ? w.TowerNeeded : w.TowerNeededCalm) : w.TowerBase;
+v += (baseV + w.Tower * st.Hp) * towerF;
+double d2 = SimState.D2(st.X, st.Y, qx, qy);
+if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
+if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
 }
-else { v -= w.EnemyTower * st.Hp * towerF; enemyTowers++; }
+else { v -= (w.EnemyTowerBase + w.EnemyTower * st.Hp) * towerF; enemyTowers++; }
 break;
 case StructureType.Mine:
 {
 double yield = st.Rate * left;
 if (st.Gold >= 0 && st.Gold < yield) yield = st.Gold;
-if (st.Owner == me) v += w.Mine * yield;
+if (st.Owner == me)
+{
+double dHome = Math.Sqrt(SimState.D2(st.X, st.Y, homeX, homeY));
+v += w.Mine * yield * (1 - w.MineFar * Math.Min(1.0, dHome / w.MineFarDist));
+}
 else v -= w.EnemyMine * yield;
 }
 break;
@@ -587,7 +626,7 @@ barracks++;
 if (st.CreepType == 0) knightBarracks++;
 else if (st.CreepType == 2) giantBarracks++;
 }
-else if (st.CreepType == 0 && st.Training) enemyKnightsComing = true;
+else if (st.CreepType == 0) enemyKnightsComing = true;
 break;
 }
 }
@@ -614,6 +653,11 @@ enemyKnightsComing = true;
 else if (c.Type == 2) v -= w.EnemyGiant * c.Health;
 }
 if (enemyKnightsComing && covered) v += w.Cover;
+if (enemyKnightsAlive)
+{
+double safeD = Math.Sqrt(safeD2);
+if (safeD > w.SafeRadius) v -= w.Exposure * (safeD - w.SafeRadius) * (1 + Math.Max(0, 80 - myHp) / 40.0);
+}
 if (w.Noise > 0) v += (rnd.NextDouble() - 0.5) * w.Noise;
 return v;
 }
@@ -636,6 +680,7 @@ public int GiantWhenTowers = 2;
 public int SecondBarracksIncome = 6;
 public int KnightZone = 250;
 private readonly List<int> _train = new List<int>();
+private readonly int[][][] _trainBuf = { new int[16][], new int[16][] };
 private readonly int[] _near = new int[8];
 private readonly double[] _nearD = new double[8];
 public int[] Train(SimState s, int me)
@@ -651,13 +696,27 @@ SimSite st = s.Sites[i];
 if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 2) continue;
 if (enemyTowers >= GiantWhenTowers && gold >= CreepStats.Cost[2]) { _train.Add(st.Id); gold -= CreepStats.Cost[2]; }
 }
+bool saveForGiant = false;
+if (enemyTowers >= GiantWhenTowers)
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2 && gold < CreepStats.Cost[2]) saveForGiant = true;
+}
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
 if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 0) continue;
+if (saveForGiant) continue;
 if (gold >= CreepStats.Cost[0]) { _train.Add(st.Id); gold -= CreepStats.Cost[0]; }
 }
-return _train.Count == 0 ? SimAction.NoTrain : _train.ToArray();
+if (_train.Count == 0) return SimAction.NoTrain;
+int[][] pool = _trainBuf[me];
+int n = Math.Min(_train.Count, pool.Length - 1);
+int[] buf = pool[n];
+if (buf == null) pool[n] = buf = new int[n];
+for (int i = 0; i < n; i++) buf[i] = _train[i];
+return buf;
 }
 public int Candidates(SimState s, int me, QueenAction[] buf)
 {
@@ -737,11 +796,13 @@ public sealed class SearchStrategy : IStrategy
 {
 public int Depth = 12;
 public int Width = 16;
-public int MaxMs = 25;
-public int RolloutTurns = 10;
+public int FineDepth = 4;
+public int MaxMs = 18;
+public int RolloutTurns = 8;
+public int RolloutLeaves = 6;
 public double RolloutWeight = 0.7;
 public bool Debug;
-public int FirstTurnMs = 500;
+public int FirstTurnMs = 300;
 public readonly EvalWeights W = new EvalWeights();
 public readonly Macro Macro = new Macro();
 private sealed class Node
@@ -840,7 +901,9 @@ for (int d = 1; d < Depth; d++)
 if (RolloutTurns > 0 && expanded > 0)
 {
 double stepMs = (double)clock.ElapsedMs / expanded;
-searchDeadline = deadline - (long)Math.Ceiling(stepMs * beamCount * RolloutTurns * 1.5) - 1;
+long reserve = (long)Math.Ceiling(stepMs * Math.Min(beamCount, RolloutLeaves) * RolloutTurns * 1.3) + 1;
+long cap = Math.Max(2, (deadline - clock.ElapsedMs) / 3);
+searchDeadline = deadline - Math.Min(reserve, cap);
 }
 Node[] next = bank == _bankA ? _bankB : _bankA;
 int n = 0;
@@ -849,7 +912,7 @@ for (int b = 0; b < beamCount && !timeUp; b++)
 {
 Node parent = _beam[b];
 if (parent.State.GameOver) { CopyNode(parent, next[n++]); continue; }
-n += Expand(parent.State, me, enemy, next, n, false, clock, searchDeadline, ref expanded, out timeUp, parent.First);
+n += Expand(parent.State, me, enemy, next, n, false, clock, searchDeadline, ref expanded, out timeUp, parent.First, d, parent.Last);
 }
 if (timeUp || n == 0) break;
 beamCount = Select(next, n);
@@ -860,7 +923,7 @@ if (RolloutTurns > 0 && beamCount > 0)
 {
 double bestMix = double.NegativeInfinity;
 int rolled = 0;
-for (int b = 0; b < beamCount; b++)
+for (int b = 0; b < Math.Min(beamCount, RolloutLeaves); b++)
 {
 Node leaf = _beam[b];
 double mix = leaf.Score;
@@ -897,10 +960,18 @@ to.State.CopyFrom(from.State);
 to.Score = from.Score;
 to.First = from.First;
 }
-private int Expand(SimState state, int me, SimAction enemy, Node[] bank, int offset, bool isRoot, TurnClock clock, long deadline, ref int expanded, out bool timeUp, QueenAction first = default(QueenAction))
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
+private int Expand(SimState state, int me, SimAction enemy, Node[] bank, int offset, bool isRoot, TurnClock clock, long deadline, ref int expanded, out bool timeUp, QueenAction first = default(QueenAction), int depth = 0, QueenAction last = default(QueenAction))
 {
 timeUp = false;
-int nc = Macro.Candidates(state, me, _cand);
+int nc;
+if (depth < FineDepth) nc = Macro.Candidates(state, me, _cand);
+else
+{
+_cand[0] = last;
+nc = 1;
+if (last.Kind != QueenActionKind.Wait) _cand[nc++] = QueenAction.Wait();
+}
 int[] train = Macro.Train(state, me);
 enemy.Train = Macro.Train(state, 1 - me);
 int n = 0;
@@ -919,7 +990,7 @@ expanded++;
 }
 return n;
 }
-private readonly HashSet<long> _seen = new HashSet<long>();
+private readonly HashSet<long> _seen = new HashSet<long>(1024);
 private int Select(Node[] bank, int n)
 {
 for (int i = 0; i < n; i++) { _order[i] = i; _keys[i] = -bank[i].Score; }
@@ -1077,6 +1148,8 @@ public int[] CreepCount = new int[2];
 public double[] QueenX = new double[2], QueenY = new double[2];
 public int[] Health = new int[2];
 public int[] Gold = new int[2];
+public static bool InterleavedQueens;
+public static int SubstepIterations = 1;
 public bool GameOver;
 public int Winner = -1;
 public bool[] Killed = new bool[2];
@@ -1181,6 +1254,7 @@ var s = new SimState();
 s.CopyFrom(this);
 return s;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public void CopyFrom(SimState o)
 {
 Turn = o.Turn; MyIndex = o.MyIndex; GameOver = o.GameOver; Winner = o.Winner;
@@ -1271,6 +1345,7 @@ private readonly int[] _schedP = new int[2], _schedSite = new int[2];
 private readonly BuildType[] _schedType = new BuildType[2];
 private readonly bool[] _schedValid = new bool[2];
 private const double Frame = 1.0 / 5;
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public void Step(SimAction a0, SimAction a1)
 {
 if (GameOver) return;
@@ -1288,6 +1363,7 @@ CheckEnd();
 Snap();
 Turn++;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void ProcessPlayerActions(SimAction a0, SimAction a1)
 {
 int nAttempted = 0, nSched = 0;
@@ -1404,13 +1480,14 @@ for (int p = 0; p < 2; p++)
 for (int i = 0; i < CreepCount[p]; i++)
 if (Creeps[p][i].Type == type) _order[_nOrder++] = new CreepRef { P = p, I = i };
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void ProcessCreeps()
 {
 BuildOrder();
 for (int sub = 0; sub < 5; sub++)
 {
 for (int k = 0; k < _nOrder; k++) MoveCreep(_order[k].P, _order[k].I);
-FixCollisions(1);
+FixCollisions(SubstepIterations);
 }
 for (int k = 0; k < _nOrder; k++) DealDamage(_order[k].P, _order[k].I);
 for (int k = 0; k < _nOrder; k++)
@@ -1458,6 +1535,7 @@ if (d < bestD) { bestD = d; best = i; }
 }
 return best;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void MoveCreep(int p, int i)
 {
 ref SimUnit c = ref Creeps[p][i];
@@ -1506,6 +1584,7 @@ break;
 }
 }
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void DealDamage(int p, int i)
 {
 SimUnit c = Creeps[p][i];
@@ -1554,6 +1633,7 @@ if (amount <= 0) return;
 c.Health -= amount;
 if (c.Health < 0) c.Health = 0;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void ActSite(int idx)
 {
 SimSite s = Sites[idx];
@@ -1670,6 +1750,7 @@ QueenY[p] = JavaMath.Round(QueenY[p]);
 }
 }
 private const double Eps2 = 1e-6 * 1e-6;
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public static void Resized(double vx, double vy, double len, out double rx, out double ry)
 {
 double l2 = vx * vx + vy * vy;
@@ -1682,6 +1763,7 @@ ux = vx / l; uy = vy / l;
 }
 rx = ux * len; ry = uy * len;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public static void Towards(ref double x, ref double y, double tx, double ty, double maxDist)
 {
 double dx = tx - x, dy = ty - y;
@@ -1691,32 +1773,43 @@ Resized(dx, dy, maxDist, out rx, out ry);
 x = x + rx; y = y + ry;
 }
 private int _nUnits;
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void LoadBodies()
 {
 int n = CreepCount[0] + CreepCount[1] + 2 + Sites.Length;
 if (_bodies.Length < n) _bodies = new Body[Math.Max(n, _bodies.Length * 2)];
 int k = 0;
 for (int p = 0; p < 2; p++)
+{
 for (int i = 0; i < CreepCount[p]; i++)
 {
 SimUnit c = Creeps[p][i];
 _bodies[k++] = new Body { X = c.X, Y = c.Y, Radius = c.Radius, Mass = c.Mass };
 }
+if (InterleavedQueens) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
+}
+if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
 _nUnits = k;
 for (int i = 0; i < Sites.Length; i++) _bodies[k++] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
 _nBodies = k;
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void StoreBodies()
 {
 int k = 0;
 for (int p = 0; p < 2; p++)
+{
 for (int i = 0; i < CreepCount[p]; i++)
 {
 Creeps[p][i].X = _bodies[k].X; Creeps[p][i].Y = _bodies[k].Y; k++;
 }
+if (InterleavedQueens) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
+}
+if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void FixCollisions(int maxIterations)
 {
 LoadBodies();
@@ -1724,6 +1817,7 @@ for (int it = 0; it < maxIterations; it++)
 if (!CollisionPass()) break;
 StoreBodies();
 }
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private bool CollisionPass()
 {
 int n = _nBodies, nUnits = _nUnits;
@@ -1847,6 +1941,7 @@ public int DangerRadius = 500;
 public int TowerReach = 700;
 public int EnemyZone = 350;
 public int KnightZone = 250;
+public bool BarracksLate;
 private int _homeX = -1, _homeY = -1;
 public void WarmUp(TurnClock clock) { }
 public TurnOutput Play(TurnInput t, TurnClock clock)
@@ -1922,7 +2017,7 @@ foreach (Site s in t.Sites)
 if (s.IsOwnBarracks(UnitType.Knight)) knightBarracks++;
 if (s.IsOwnTower) towers++;
 }
-if (knightBarracks == 0)
+if (knightBarracks == 0 && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)))
 {
 int i = Nearest(t, Filter.Empty);
 if (i >= 0) { type = BuildType.BarracksKnight; return i; }

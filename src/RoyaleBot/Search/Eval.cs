@@ -9,9 +9,9 @@ namespace Royale
         public double Hp = 100;             // моё HP
         public double EnemyHp = 50;         // HP противника
         public double Dead = 1e6;           // смерть королевы
-        public double Tower = 0.5;          // HP моей башни
+        public double Tower = 1.0;          // HP моей башни
         public double TowerBase = 400;      // сама башня (существует, с убыванием к концу)
-        public double TowerNeeded = 800;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
+        public double TowerNeeded = 1200;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
         public double TowerNeededCalm = 500; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
         public double Exposure = 2;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе
@@ -20,7 +20,7 @@ namespace Royale
         public int MineFarDist = 1200;
         public double EnemyTower = 0.5;     // HP чужой башни
         public double EnemyTowerBase = 300;
-        public double Mine = 4;             // за единицу будущей добычи моей шахты: min(доход × остаток ходов, золото сайта)
+        public double Mine = 3;             // за единицу будущей добычи моей шахты: min(доход × остаток ходов, золото сайта)
         public double EnemyMine = 2;        // то же для чужой шахты
         public double Gold = 4;             // золото в кармане (не больше GoldCap; без казармы ×0.2)
         public int GoldCap = 300;

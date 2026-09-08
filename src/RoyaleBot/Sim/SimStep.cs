@@ -182,7 +182,7 @@ namespace Royale
             for (int sub = 0; sub < 5; sub++)
             {
                 for (int k = 0; k < _nOrder; k++) MoveCreep(_order[k].P, _order[k].I);
-                FixCollisions(1);
+                FixCollisions(SubstepIterations);
             }
             for (int k = 0; k < _nOrder; k++) DealDamage(_order[k].P, _order[k].I);
 

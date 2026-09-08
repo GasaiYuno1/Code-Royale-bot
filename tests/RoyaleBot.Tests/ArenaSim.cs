@@ -14,7 +14,14 @@ namespace Royale.Tests
         public static int Run(string[] args)
         {
             string logPath = args[1], actionsPath = args[2], hudPath = args[3];
-            for (int i = 4; i < args.Length; i++) if (args[i] == "order=old") SimState.InterleavedQueens = true;
+            string dump = null;
+            for (int i = 4; i < args.Length; i++)
+            {
+                if (args[i] == "order=old") SimState.InterleavedQueens = true;
+                else if (args[i].StartsWith("iters=")) SimState.SubstepIterations = int.Parse(args[i].Substring(6));
+                else if (args[i].StartsWith("dump=")) dump = args[i].Substring(5);
+            }
+            StreamWriter dw = dump != null ? new StreamWriter(dump) : null;
             Rules.League = 4;
             Replay.GameLog g = Replay.Parse(logPath);
             var init = new Site[2][];
@@ -56,6 +63,14 @@ namespace Royale.Tests
                 SimAction[] pair;
                 if (!actions.TryGetValue(turn, out pair) || s.GameOver) break;
                 s.Step(pair[0], pair[1]);
+                if (dw != null)
+                {
+                    for (int p = 0; p < 2; p++)
+                    {
+                        dw.WriteLine(turn + " " + p + " -1 " + (int)s.QueenX[p] + " " + (int)s.QueenY[p]);
+                        for (int i = 0; i < s.CreepCount[p]; i++) dw.WriteLine(turn + " " + p + " " + s.Creeps[p][i].Type + " " + (int)s.Creeps[p][i].X + " " + (int)s.Creeps[p][i].Y);
+                    }
+                }
                 string[] h;
                 if (!hud.TryGetValue(turn, out h)) continue;
                 string mine = s.Gold[0] + " " + s.Health[0] + " " + s.Gold[1] + " " + s.Health[1];
@@ -67,7 +82,8 @@ namespace Royale.Tests
                     if (turn - firstDiff < 4) Console.WriteLine("turn " + turn + ": sim " + mine + " vs arena " + arena);
                 }
             }
-            Console.WriteLine((SimState.InterleavedQueens ? "order=old" : "order=new") + ": matched turns " + matched + ", first diff " + firstDiff);
+            if (dw != null) dw.Close();
+            Console.WriteLine((SimState.InterleavedQueens ? "order=old" : "order=new") + " iters=" + SimState.SubstepIterations + ": matched turns " + matched + ", first diff " + firstDiff);
             return firstDiff < 0 ? 0 : 1;
         }
     }

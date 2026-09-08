@@ -51,6 +51,8 @@ namespace Royale
         /// <summary>Старый порядок сущностей в коллизиях (крипы p0, королева p0, крипы p1, королева p1) — закомментированный
         /// вариант allEntities() в Referee.kt; проверяется по реплеям арены (режим arenasim).</summary>
         public static bool InterleavedQueens;
+        /// <summary>Итераций расталкивания на подшаг движения крипов (в рефери 1; проверяется по арене).</summary>
+        public static int SubstepIterations = 1;
         public bool GameOver;
         public int Winner = -1;           // -1 ничья или не окончена
         public bool[] Killed = new bool[2];
