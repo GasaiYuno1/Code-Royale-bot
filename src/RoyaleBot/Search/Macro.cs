@@ -15,6 +15,8 @@ namespace Royale
         public int KnightZone = 250;       // не строить шахту, если чужой рыцарь ближе
 
         private readonly List<int> _train = new List<int>();
+        // буферы под TRAIN по длине, отдельно для каждого игрока: без аллокаций в поиске (массив читается только внутри Step)
+        private readonly int[][][] _trainBuf = { new int[16][], new int[16][] };
         private readonly int[] _near = new int[8];
         private readonly double[] _nearD = new double[8];
 
@@ -32,13 +34,28 @@ namespace Royale
                 if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 2) continue;
                 if (enemyTowers >= GiantWhenTowers && gold >= CreepStats.Cost[2]) { _train.Add(st.Id); gold -= CreepStats.Cost[2]; }
             }
+            // копим на гиганта: пока у врага >= GiantWhenTowers башен и есть своя казарма гигантов, рыцарей тренируем только сверх 140
+            bool saveForGiant = false;
+            if (enemyTowers >= GiantWhenTowers)
+                for (int i = 0; i < s.Sites.Length; i++)
+                {
+                    SimSite st = s.Sites[i];
+                    if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2 && gold < CreepStats.Cost[2]) saveForGiant = true;
+                }
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
                 if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 0) continue;
+                if (saveForGiant) continue;
                 if (gold >= CreepStats.Cost[0]) { _train.Add(st.Id); gold -= CreepStats.Cost[0]; }
             }
-            return _train.Count == 0 ? SimAction.NoTrain : _train.ToArray();
+            if (_train.Count == 0) return SimAction.NoTrain;
+            int[][] pool = _trainBuf[me];
+            int n = Math.Min(_train.Count, pool.Length - 1);
+            int[] buf = pool[n];
+            if (buf == null) pool[n] = buf = new int[n];
+            for (int i = 0; i < n; i++) buf[i] = _train[i];
+            return buf;
         }
 
         /// <summary>Кандидаты действий королевы: WAIT, 8 направлений, постройки на ближайших сайтах. Возвращает число.</summary>

@@ -8,6 +8,7 @@ namespace Royale
         public static void Main(string[] args)
         {
             // Буферизованный вывод: две строки и один Flush на ход.
+            System.Runtime.GCSettings.LatencyMode = System.Runtime.GCLatencyMode.SustainedLowLatency;
             var stdout = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = false };
             var stderr = Console.Error;
 
@@ -47,12 +48,15 @@ namespace Royale
                     case "upgrade": w.TowerUpgradeBelow = iv; break;
                     case "danger": w.DangerRadius = iv; break;
                     case "wreach": w.TowerReach = iv; break;
+                    case "barlate": w.BarracksLate = iv != 0; break;
                     // SearchStrategy
                     case "depth": s.Depth = iv; break;
                     case "width": s.Width = iv; break;
                     case "ms": s.MaxMs = iv; break;
                     case "firstms": s.FirstTurnMs = iv; break;
                     case "rollout": s.RolloutTurns = iv; break;
+                    case "leaves": s.RolloutLeaves = iv; break;
+                    case "fine": s.FineDepth = iv; break;
                     case "debug": s.Debug = iv != 0; break;
                     case "rolloutw": s.RolloutWeight = v; break;
                     case "sites": s.Macro.NearSites = iv; break;

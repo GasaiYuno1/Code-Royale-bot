@@ -18,6 +18,7 @@ namespace Royale
         public int TowerReach = 700;        // своя башня (или сайт под новую) не дальше этого — идём под неё
         public int EnemyZone = 350;         // сайты ближе этого к чужой королеве не берём
         public int KnightZone = 250;        // сайты с чужими рыцарями ближе этого не берём
+        public bool BarracksLate;           // имитация босса Bronze: шахты и башни раньше казармы (barlate=1)
 
         private int _homeX = -1, _homeY = -1;
 
@@ -108,7 +109,7 @@ namespace Royale
                 if (s.IsOwnTower) towers++;
             }
 
-            if (knightBarracks == 0)
+            if (knightBarracks == 0 && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)))
             {
                 int i = Nearest(t, Filter.Empty);
                 if (i >= 0) { type = BuildType.BarracksKnight; return i; }

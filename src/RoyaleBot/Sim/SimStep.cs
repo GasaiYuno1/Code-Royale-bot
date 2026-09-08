@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 
 namespace Royale
 {
@@ -24,6 +25,7 @@ namespace Royale
 
         private const double Frame = 1.0 / 5;
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void Step(SimAction a0, SimAction a1)
         {
             if (GameOver) return;
@@ -44,6 +46,7 @@ namespace Royale
 
         // ---------- действия игроков ----------
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void ProcessPlayerActions(SimAction a0, SimAction a1)
         {
             int nAttempted = 0, nSched = 0;
@@ -172,6 +175,7 @@ namespace Royale
                         if (Creeps[p][i].Type == type) _order[_nOrder++] = new CreepRef { P = p, I = i };
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void ProcessCreeps()
         {
             BuildOrder();
@@ -235,6 +239,7 @@ namespace Royale
             return best;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void MoveCreep(int p, int i)
         {
             ref SimUnit c = ref Creeps[p][i];
@@ -284,6 +289,7 @@ namespace Royale
             }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void DealDamage(int p, int i)
         {
             SimUnit c = Creeps[p][i];
@@ -336,6 +342,7 @@ namespace Royale
 
         // ---------- постройки ----------
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void ActSite(int idx)
         {
             SimSite s = Sites[idx];
@@ -463,6 +470,7 @@ namespace Royale
         private const double Eps2 = 1e-6 * 1e-6;
 
         /// <summary>Vector2.resizedTo: normalized * len; нулевой вектор нормализуется в (1, 0).</summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void Resized(double vx, double vy, double len, out double rx, out double ry)
         {
             double l2 = vx * vx + vy * vy;
@@ -477,6 +485,7 @@ namespace Royale
         }
 
         /// <summary>Vector2.towards: если цель ближе maxDist — встать в неё, иначе шаг maxDist к ней.</summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public static void Towards(ref double x, ref double y, double tx, double ty, double maxDist)
         {
             double dx = tx - x, dy = ty - y;
@@ -488,34 +497,45 @@ namespace Royale
 
         private int _nUnits;
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void LoadBodies()
         {
             int n = CreepCount[0] + CreepCount[1] + 2 + Sites.Length;
             if (_bodies.Length < n) _bodies = new Body[Math.Max(n, _bodies.Length * 2)];
             int k = 0;
             for (int p = 0; p < 2; p++)
+            {
                 for (int i = 0; i < CreepCount[p]; i++)
                 {
                     SimUnit c = Creeps[p][i];
                     _bodies[k++] = new Body { X = c.X, Y = c.Y, Radius = c.Radius, Mass = c.Mass };
                 }
-            for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
+                if (InterleavedQueens) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
+            }
+            if (!InterleavedQueens)
+                for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
             _nUnits = k;
             for (int i = 0; i < Sites.Length; i++) _bodies[k++] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
             _nBodies = k;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void StoreBodies()
         {
             int k = 0;
             for (int p = 0; p < 2; p++)
+            {
                 for (int i = 0; i < CreepCount[p]; i++)
                 {
                     Creeps[p][i].X = _bodies[k].X; Creeps[p][i].Y = _bodies[k].Y; k++;
                 }
-            for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
+                if (InterleavedQueens) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
+            }
+            if (!InterleavedQueens)
+                for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void FixCollisions(int maxIterations)
         {
             LoadBodies();
@@ -530,6 +550,7 @@ namespace Royale
         /// в границах и разнесены при генерации карты), а sqrt считается только если квадрат расстояния меньше
         /// квадрата суммы радиусов — иначе overlap ≤ 0 и пара всё равно пропускается.
         /// </summary>
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private bool CollisionPass()
         {
             int n = _nBodies, nUnits = _nUnits;

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using System.Runtime.CompilerServices;
 
 namespace Royale
 {
@@ -47,6 +48,9 @@ namespace Royale
         public double[] QueenX = new double[2], QueenY = new double[2];
         public int[] Health = new int[2];
         public int[] Gold = new int[2];   // Gold[1 - MyIndex] может быть неизвестен (-1)
+        /// <summary>Старый порядок сущностей в коллизиях (крипы p0, королева p0, крипы p1, королева p1) — закомментированный
+        /// вариант allEntities() в Referee.kt; проверяется по реплеям арены (режим arenasim).</summary>
+        public static bool InterleavedQueens;
         public bool GameOver;
         public int Winner = -1;           // -1 ничья или не окончена
         public bool[] Killed = new bool[2];
@@ -174,6 +178,7 @@ namespace Royale
             return s;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         public void CopyFrom(SimState o)
         {
             Turn = o.Turn; MyIndex = o.MyIndex; GameOver = o.GameOver; Winner = o.Winner;

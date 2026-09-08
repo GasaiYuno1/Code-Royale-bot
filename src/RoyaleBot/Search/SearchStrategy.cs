@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 
 namespace Royale
 {
@@ -13,11 +14,13 @@ namespace Royale
     {
         public int Depth = 12;
         public int Width = 16;
-        public int MaxMs = 25;          // бюджет поиска на обычном ходу вместе с продолжениями
-        public int RolloutTurns = 10;   // продолжение лучших листьев: повторять последнее действие ещё столько ходов
+        public int FineDepth = 4;       // до этой глубины — все кандидаты, дальше только «то же действие» или WAIT
+        public int MaxMs = 18;          // бюджет поиска на обычном ходу вместе с продолжениями (на CodinGame были таймауты при 25)
+        public int RolloutTurns = 8;    // продолжение лучших листьев: повторять последнее действие ещё столько ходов
+        public int RolloutLeaves = 6;   // сколько лучших листьев продолжать (резерв времени = их шаги по замеренной цене, но не больше трети бюджета)
         public double RolloutWeight = 0.7;  // доля оценки после продолжения в итоговой оценке листа
         public bool Debug;              // печатать кандидатов корня с оценками (ключ debug=1)
-        public int FirstTurnMs = 500;   // на первом ходу (лимит 1000 мс, JIT)
+        public int FirstTurnMs = 300;   // на первом ходу (лимит 1000 мс, JIT)
         public readonly EvalWeights W = new EvalWeights();
         public readonly Macro Macro = new Macro();
 
@@ -133,7 +136,9 @@ namespace Royale
                 if (RolloutTurns > 0 && expanded > 0)
                 {
                     double stepMs = (double)clock.ElapsedMs / expanded;
-                    searchDeadline = deadline - (long)Math.Ceiling(stepMs * beamCount * RolloutTurns * 1.5) - 1;
+                    long reserve = (long)Math.Ceiling(stepMs * Math.Min(beamCount, RolloutLeaves) * RolloutTurns * 1.3) + 1;
+                    long cap = Math.Max(2, (deadline - clock.ElapsedMs) / 3);
+                    searchDeadline = deadline - Math.Min(reserve, cap);
                 }
                 Node[] next = bank == _bankA ? _bankB : _bankA;
                 int n = 0;
@@ -142,7 +147,7 @@ namespace Royale
                 {
                     Node parent = _beam[b];
                     if (parent.State.GameOver) { CopyNode(parent, next[n++]); continue; }
-                    n += Expand(parent.State, me, enemy, next, n, false, clock, searchDeadline, ref expanded, out timeUp, parent.First);
+                    n += Expand(parent.State, me, enemy, next, n, false, clock, searchDeadline, ref expanded, out timeUp, parent.First, d, parent.Last);
                 }
                 if (timeUp || n == 0) break;
                 beamCount = Select(next, n);
@@ -155,7 +160,7 @@ namespace Royale
             {
                 double bestMix = double.NegativeInfinity;
                 int rolled = 0;
-                for (int b = 0; b < beamCount; b++)
+                for (int b = 0; b < Math.Min(beamCount, RolloutLeaves); b++)
                 {
                     Node leaf = _beam[b];
                     double mix = leaf.Score;
@@ -196,10 +201,18 @@ namespace Royale
         }
 
         /// <summary>Раскрывает state всеми кандидатами в bank начиная с offset; возвращает число добавленных.</summary>
-        private int Expand(SimState state, int me, SimAction enemy, Node[] bank, int offset, bool isRoot, TurnClock clock, long deadline, ref int expanded, out bool timeUp, QueenAction first = default(QueenAction))
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private int Expand(SimState state, int me, SimAction enemy, Node[] bank, int offset, bool isRoot, TurnClock clock, long deadline, ref int expanded, out bool timeUp, QueenAction first = default(QueenAction), int depth = 0, QueenAction last = default(QueenAction))
         {
             timeUp = false;
-            int nc = Macro.Candidates(state, me, _cand);
+            int nc;
+            if (depth < FineDepth) nc = Macro.Candidates(state, me, _cand);
+            else
+            {
+                _cand[0] = last;
+                nc = 1;
+                if (last.Kind != QueenActionKind.Wait) _cand[nc++] = QueenAction.Wait();
+            }
             int[] train = Macro.Train(state, me);
             enemy.Train = Macro.Train(state, 1 - me);
             int n = 0;
@@ -219,7 +232,7 @@ namespace Royale
             return n;
         }
 
-        private readonly HashSet<long> _seen = new HashSet<long>();
+        private readonly HashSet<long> _seen = new HashSet<long>(1024);
 
         /// <summary>Лучшие Width узлов bank[0..n) → _beam (по убыванию оценки), без дублей по положению королевы и постройкам.</summary>
         private int Select(Node[] bank, int n)
