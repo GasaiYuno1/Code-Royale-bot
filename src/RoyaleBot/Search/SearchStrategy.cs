@@ -13,7 +13,7 @@ namespace Royale
     {
         public int Depth = 12;
         public int Width = 16;
-        public int MaxMs = 28;          // бюджет поиска на обычном ходу вместе с продолжениями
+        public int MaxMs = 25;          // бюджет поиска на обычном ходу вместе с продолжениями
         public int RolloutTurns = 10;   // продолжение лучших листьев: повторять последнее действие ещё столько ходов
         public double RolloutWeight = 0.7;  // доля оценки после продолжения в итоговой оценке листа
         public bool Debug;              // печатать кандидатов корня с оценками (ключ debug=1)
@@ -205,7 +205,7 @@ namespace Royale
             int n = 0;
             for (int i = 0; i < nc; i++)
             {
-                if (!isRoot && (expanded & 7) == 0 && clock.ElapsedMs >= deadline) { timeUp = true; break; }
+                if (!isRoot && (expanded & 3) == 0 && clock.ElapsedMs >= deadline) { timeUp = true; break; }
                 Node child = bank[offset + n];
                 child.State.CopyFrom(state);
                 var mine = new SimAction { Queen = _cand[i], Train = train, BuildTypeValid = true };

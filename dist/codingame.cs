@@ -493,20 +493,23 @@ namespace Royale
 public sealed class EvalWeights
 {
 public double Hp = 100;
-public double EnemyHp = 30;
+public double EnemyHp = 50;
 public double Dead = 1e6;
-public double Tower = 3.0;
+public double Tower = 2.0;
 public double EnemyTower = 1.0;
-public double Mine = 300;
-public double EnemyMine = 100;
-public double Gold = 3;
-public double Knight = 15;
-public double EnemyKnight = 60;
+public double Mine = 4;
+public double EnemyMine = 2;
+public double Gold = 4;
+public int GoldCap = 300;
+public double Knight = 5;
+public double EnemyKnight = 20;
 public int KnightReach = 1200;
 public double FarKnight = 1.0;
 public double Giant = 2;
 public double EnemyGiant = 2;
-public double NoBarracks = 2000;
+public double NoBarracks = 5000;
+public double GiantBarracks = 1500;
+public int GiantWhenTowers = 2;
 public double ExtraBarracks = 500;
 public int MaxBarracks = 2;
 public double Cover = 300;
@@ -529,6 +532,8 @@ case "far": FarKnight = v; break;
 case "giant": Giant = v; break;
 case "egiant": EnemyGiant = v; break;
 case "nobar": NoBarracks = v; break;
+case "giantbar": GiantBarracks = v; break;
+case "goldcap": GoldCap = (int)v; break;
 case "extrabar": ExtraBarracks = v; break;
 case "maxbar": MaxBarracks = (int)v; break;
 case "cover": Cover = v; break;
@@ -548,9 +553,9 @@ if (myHp <= 0) return -w.Dead + s.Turn * 10;
 double v = w.Hp * myHp - w.EnemyHp * enHp;
 if (enHp <= 0) v += w.Dead * 0.1;
 int left = Consts.MaxTurns - s.Turn;
-double mineF = Math.Min(1.0, Math.Max(0.15, left / 80.0));
+if (left < 1) left = 1;
 double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
-int knightBarracks = 0, barracks = 0;
+int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0;
 bool enemyKnightsComing = false;
 double qx = s.QueenX[me], qy = s.QueenY[me];
 bool covered = false;
@@ -565,25 +570,32 @@ if (st.Owner == me)
 v += w.Tower * st.Hp * towerF;
 if (!covered && SimState.D2(st.X, st.Y, qx, qy) < (double)st.AttackRadius * st.AttackRadius) covered = true;
 }
-else v -= w.EnemyTower * st.Hp * towerF;
+else { v -= w.EnemyTower * st.Hp * towerF; enemyTowers++; }
 break;
 case StructureType.Mine:
-if (st.Owner == me) v += w.Mine * st.Rate * mineF;
-else v -= w.EnemyMine * st.Rate * mineF;
+{
+double yield = st.Rate * left;
+if (st.Gold >= 0 && st.Gold < yield) yield = st.Gold;
+if (st.Owner == me) v += w.Mine * yield;
+else v -= w.EnemyMine * yield;
+}
 break;
 case StructureType.Barracks:
 if (st.Owner == me)
 {
 barracks++;
 if (st.CreepType == 0) knightBarracks++;
+else if (st.CreepType == 2) giantBarracks++;
 }
 else if (st.CreepType == 0 && st.Training) enemyKnightsComing = true;
 break;
 }
 }
 if (knightBarracks == 0) v -= w.NoBarracks;
+if (giantBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
 if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
-v += w.Gold * s.Gold[me];
+double gold = Math.Min(s.Gold[me], w.GoldCap);
+v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);
 double eqx = s.QueenX[e], eqy = s.QueenY[e];
 for (int i = 0; i < s.CreepCount[me]; i++)
 {
@@ -725,7 +737,7 @@ public sealed class SearchStrategy : IStrategy
 {
 public int Depth = 12;
 public int Width = 16;
-public int MaxMs = 28;
+public int MaxMs = 25;
 public int RolloutTurns = 10;
 public double RolloutWeight = 0.7;
 public bool Debug;
@@ -894,7 +906,7 @@ enemy.Train = Macro.Train(state, 1 - me);
 int n = 0;
 for (int i = 0; i < nc; i++)
 {
-if (!isRoot && (expanded & 7) == 0 && clock.ElapsedMs >= deadline) { timeUp = true; break; }
+if (!isRoot && (expanded & 3) == 0 && clock.ElapsedMs >= deadline) { timeUp = true; break; }
 Node child = bank[offset + n];
 child.State.CopyFrom(state);
 var mine = new SimAction { Queen = _cand[i], Train = train, BuildTypeValid = true };
