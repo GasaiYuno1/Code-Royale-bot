@@ -56,7 +56,7 @@ namespace Royale
     public enum StructureType { None = -1, Mine = 0, Tower = 1, Barracks = 2 }
 
     /// <summary>Параметры крипов по типу (индекс = UnitType): CreepType в Constants.kt.</summary>
-    public static class Creeps
+    public static class CreepStats
     {
         public static readonly int[] Count = { 4, 2, 1 };
         public static readonly int[] Cost = { 80, 100, 140 };

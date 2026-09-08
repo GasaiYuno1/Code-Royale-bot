@@ -14,7 +14,9 @@ namespace Royale
             var strategy = new WoodStrategy();
             Tuning.Apply(args, strategy, stderr);
             stderr.WriteLine("league " + Rules.League + " (" + Rules.Name + ")");
-            var bot = new Bot(strategy, stderr);
+            IStrategy chosen = strategy;
+            foreach (string a in args) if (a.StartsWith("random=")) chosen = new RandomStrategy(int.Parse(a.Substring(7)));
+            var bot = new Bot(chosen, stderr);
             bot.Run(Console.In, stdout);
         }
     }
@@ -39,6 +41,7 @@ namespace Royale
                     case "upgrade": s.TowerUpgradeBelow = v; break;
                     case "danger": s.DangerRadius = v; break;
                     case "reach": s.TowerReach = v; break;
+                    case "random": break;
                     default: log.WriteLine("unknown key: " + key); break;
                 }
             }

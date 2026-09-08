@@ -185,9 +185,9 @@ namespace Royale
             foreach (Site s in t.Sites)
             {
                 if (!s.IsOwnBarracks(UnitType.Knight) || !s.BarracksIdle) continue;
-                if (gold < Creeps.Cost[(int)UnitType.Knight]) break;
+                if (gold < CreepStats.Cost[(int)UnitType.Knight]) break;
                 ids.Add(s.Id);
-                gold -= Creeps.Cost[(int)UnitType.Knight];
+                gold -= CreepStats.Cost[(int)UnitType.Knight];
             }
             return ids.ToArray();
         }
