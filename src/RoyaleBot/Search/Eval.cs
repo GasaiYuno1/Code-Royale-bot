@@ -14,7 +14,7 @@ namespace Royale
         public double TowerNeeded = 1200;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
         public double TowerNeededCalm = 500; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
-        public double Exposure = 2;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе
+        public double Exposure = 1;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе
         public int SafeRadius = 250;
         public double MineFar = 0.4;        // шахта на расстоянии MineFarDist от дома стоит на эту долю меньше
         public int MineFarDist = 1200;
