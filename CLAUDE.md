@@ -157,6 +157,38 @@
 6. Горячее место симулятора — расталкивание (5 подшагов × все пары): отсекать заведомо далёкие пары дешёвой проверкой, порядок обработки сохранять, тогда точность не теряется.
 7. Порядок этапов оставить, сборку рефери сдвинуть в конец как необязательную.
 
+## Формат работы (уточнение от Андрея, сессия 1)
+
+Не останавливаться на подтверждения: делать до момента, когда возникает вопрос, или до конца этапа. Перед этапом — короткое объяснение плана, без ожидания «делай».
+
+## Структура репозитория
+
+- `src/RoyaleBot/` — бот. Блочные `namespace Royale { }`, все `using` в начале файла (этого требует склейка). Внешних пакетов нет.
+  - `Game/` — `Rules` (лига константой `DefaultLeague`, флаги Mines/Towers/Giants/FixedIncome; `Consts`, `Creeps` — константы рефери), `Site` (сайт + состояние хода + `KnownGold/KnownMaxMineSize`), `UnitInfo`, `TurnInput` (`MyQueen`, `EnemyQueen`, `Income`), `InputParser` (`ReadInit`, `ReadTurn`), `SiteMemory` (помнит золото/размер шахты, когда сайт не виден), `Actions` (`QueenAction` WAIT/MOVE/BUILD с проверкой `Allowed` по лиге, `TurnOutput` с `TrainLine`), `Geom`.
+  - `Strategy/` — `IStrategy` (`WarmUp`, `Play`), `WoodStrategy` (казарма рыцарей → шахты до `TargetIncome` (полные правила) → 3 башни и их прокачка ниже 500 → ещё шахты; при чужих рыцарях ближе `DangerRadius` — под ближайшую свою башню и качать её, без башни — строить новую на сайте не ближе к рыцарям, в Wood 3 — бежать от рыцарей к дому; TRAIN — все свободные казармы рыцарей по золоту).
+  - `Bot.cs` — цикл ходов: стартовый ввод, две строки ответа, любая ошибка → `WAIT`/`TRAIN`, постройка не по лиге → `WAIT`. `TurnClock.cs` — 1000/50 мс с запасом 10. `Program.cs` — `key=value` для локальных матчей: `league`, `income`, `towers`, `upgrade`, `danger`, `reach`.
+- `tests/RoyaleBot.Tests/` — тесты без NuGet (`MiniTest.cs`, `[Test]` на `public static void`): парсер, память сайтов, формат ответа, запрет построек не по лиге, мусорный ввод.
+- `tools/bundle.py` → `dist/codingame.cs` (в git, пересобирать перед пушем); `tools/check_bundle.sh` — склейка + сборка её как единственного файла проекта; `tools/paste_page.py` → `build/paste.html` — страница «скопировать код» для телефона с выбором лиги (подставляет `DefaultLeague` при копировании), публикуется как артефакт.
+- `tools/referee/` — официальный рефери: `build.sh` (клон `csj/code-royale` в `build/referee/`, правка pom под Kotlin 1.9.24 и `minBy`→`minByOrNull` для JDK 21, сборка Maven, компиляция боссов `config/level1..4/Boss.java`, раннер), `Match.java` (пакет раннера SDK 1.30: партии без просмотрщика через приватные `initialize`/`run`, счёт = HP королевы, −1 = убит; считает предупреждения и «убийства» по summary, `-dump` пишет summary и вывод игроков по кадрам; кадр = полуход, 401 кадр = 200 ходов), `match.sh <лига> <игр> <seed> <A> <B>` (`bot`, `bot:key=value`, `boss`, произвольная команда; стороны чередуются). Важно: `--add-opens java.base/java.lang` — без него Guice/cglib SDK падает на JDK 21 и раннер виснет.
+
+## Команды
+
+```
+dotnet build src/RoyaleBot -c Release
+dotnet run -c Release --project tests/RoyaleBot.Tests [фильтр]
+tools/check_bundle.sh                         # dist/codingame.cs + проверка сборки одним файлом
+python3 tools/paste_page.py                   # build/paste.html
+tools/referee/build.sh                        # один раз: рефери + боссы + раннер (нужна сеть до github и Maven Central)
+tools/referee/match.sh 4 10 1 bot boss        # 10 партий против босса Bronze, сиды 1..10
+tools/referee/match.sh 2 10 1 bot:towers=2 boss -v -dump build/dump/l2
+```
+
+## Окружение песочницы
+
+- `dotnet` не предустановлен; `dot.net` и `builds.dotnet.microsoft.com` закрыты политикой, ставится `apt-get install -y dotnet-sdk-8.0` из репозитория Ubuntu (8.0.130). JDK 21, Maven и Gradle есть. Maven Central доступен. `www.codingame.com` доступен.
+- Рефери собирается ~1 мин (зависимости кэшируются в `~/.m2`). Партия против босса ~1 с (старт JVM бота-босса и dotnet), 4 ядра — 4 параллельных `match.sh`.
+
 ## Статус
 
-- 2026-09-08: репозиторий создан, этот файл — первый коммит. Код не написан. Следующее действие — обсудить предложения выше и начать этап 1.
+- 2026-09-08, сессия 1. **Этап 1 сделан, кроме самого выхода в Bronze** (сабмит ручной): каркас, тесты (7), склейка 18k символов, рефери и матчи против боссов. Против боссов по 10 партий на сидах 1..10: Wood 3 **10:0**, Wood 2 **8:2** (варианты `towers=2/4`, `danger=650` — 9:1, шум), Wood 1 **10:0**, Bronze **10:0**; 0 предупреждений и таймаутов у бота. Self-play в правилах Bronze 8 партий — 0 нарушений, партии доходят до 200 ходов.
+- Следующее: Андрей вставляет склейку (страница `build/paste.html`, лига выбирается на странице) и проходит Wood 3 → Wood 2 → Wood 1 → Bronze; после каждого повышения менять лигу на странице и сабмитить заново. Потом этап 2 — симулятор (порт `Referee.gameTurn` + `Characters`/`Structures`/`MapBuilding` построчно, сверка по дампам `match.sh -dump` и по самопроверке в бою).

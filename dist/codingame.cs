@@ -450,6 +450,7 @@ case "income": s.TargetIncome = v; break;
 case "towers": s.TargetTowers = v; break;
 case "upgrade": s.TowerUpgradeBelow = v; break;
 case "danger": s.DangerRadius = v; break;
+case "reach": s.TowerReach = v; break;
 default: log.WriteLine("unknown key: " + key); break;
 }
 }
@@ -475,7 +476,8 @@ public sealed class WoodStrategy : IStrategy
 public int TargetIncome = 5;
 public int TargetTowers = 3;
 public int TowerUpgradeBelow = 500;
-public int DangerRadius = 400;
+public int DangerRadius = 500;
+public int TowerReach = 700;
 public int EnemyZone = 350;
 public int KnightZone = 250;
 private int _homeX = -1, _homeY = -1;
@@ -503,15 +505,30 @@ return o;
 }
 private QueenAction Retreat(TurnInput t, UnitInfo q, int cx, int cy)
 {
-int best = -1, bestHp = 0;
+if (Rules.Towers)
+{
+int best = -1;
+double bestD = TowerReach;
 for (int i = 0; i < t.Sites.Length; i++)
 {
 Site s = t.Sites[i];
-if (!s.IsOwnTower || s.Param1 <= bestHp) continue;
-if (Geom.Dist(s.X, s.Y, q.X, q.Y) > 800) continue;
-best = i; bestHp = s.Param1;
+if (!s.IsOwnTower) continue;
+double d = Geom.Dist(s.X, s.Y, q.X, q.Y);
+if (d < bestD) { bestD = d; best = i; }
 }
-if (best >= 0 && Rules.Towers) return QueenAction.BuildAt(t.Sites[best].Id, BuildType.Tower);
+if (best >= 0) return QueenAction.BuildAt(t.Sites[best].Id, BuildType.Tower);
+best = -1; bestD = TowerReach;
+for (int i = 0; i < t.Sites.Length; i++)
+{
+Site s = t.Sites[i];
+if (!s.IsEmpty) continue;
+double d = Geom.Dist(s.X, s.Y, q.X, q.Y);
+if (d >= bestD) continue;
+if (Geom.Dist(s.X, s.Y, cx, cy) < Geom.Dist(q.X, q.Y, cx, cy)) continue;
+bestD = d; best = i;
+}
+if (best >= 0) return QueenAction.BuildAt(t.Sites[best].Id, BuildType.Tower);
+}
 double ax = q.X - cx, ay = q.Y - cy;
 double al = Math.Sqrt(ax * ax + ay * ay);
 if (al < 1e-6) { ax = _homeX - q.X; ay = _homeY - q.Y; al = Math.Sqrt(ax * ax + ay * ay); }

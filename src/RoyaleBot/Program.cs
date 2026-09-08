@@ -38,6 +38,7 @@ namespace Royale
                     case "towers": s.TargetTowers = v; break;
                     case "upgrade": s.TowerUpgradeBelow = v; break;
                     case "danger": s.DangerRadius = v; break;
+                    case "reach": s.TowerReach = v; break;
                     default: log.WriteLine("unknown key: " + key); break;
                 }
             }
