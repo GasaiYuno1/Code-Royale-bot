@@ -435,10 +435,13 @@ public static void Main(string[] args)
 {
 var stdout = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = false };
 var stderr = Console.Error;
-var strategy = new WoodStrategy();
-Tuning.Apply(args, strategy, stderr);
-stderr.WriteLine("league " + Rules.League + " (" + Rules.Name + ")");
-IStrategy chosen = strategy;
+var wood = new WoodStrategy();
+var search = new SearchStrategy(stderr);
+bool useWood = false;
+foreach (string a in args) if (a == "wood=1") useWood = true;
+Tuning.Apply(args, wood, search, stderr);
+stderr.WriteLine("league " + Rules.League + " (" + Rules.Name + ") " + (useWood ? "wood" : "search"));
+IStrategy chosen = useWood ? (IStrategy)wood : search;
 foreach (string a in args) if (a.StartsWith("random=")) chosen = new RandomStrategy(int.Parse(a.Substring(7)));
 var bot = new Bot(chosen, stderr);
 bot.Run(Console.In, stdout);
@@ -446,27 +449,490 @@ bot.Run(Console.In, stdout);
 }
 public static class Tuning
 {
-public static void Apply(string[] args, WoodStrategy s, TextWriter log)
+public static void Apply(string[] args, WoodStrategy w, SearchStrategy s, TextWriter log)
 {
 foreach (string a in args)
 {
 int eq = a.IndexOf('=');
 if (eq <= 0) continue;
 string key = a.Substring(0, eq);
-int v;
-if (!int.TryParse(a.Substring(eq + 1), out v)) { log.WriteLine("bad value: " + a); continue; }
+double v;
+if (!double.TryParse(a.Substring(eq + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) { log.WriteLine("bad value: " + a); continue; }
+int iv = (int)v;
 switch (key)
 {
-case "league": Rules.League = v; break;
-case "income": s.TargetIncome = v; break;
-case "towers": s.TargetTowers = v; break;
-case "upgrade": s.TowerUpgradeBelow = v; break;
-case "danger": s.DangerRadius = v; break;
-case "reach": s.TowerReach = v; break;
-case "random": break;
-default: log.WriteLine("unknown key: " + key); break;
+case "league": Rules.League = iv; break;
+case "wood": case "random": break;
+case "income": w.TargetIncome = iv; break;
+case "towers": w.TargetTowers = iv; break;
+case "upgrade": w.TowerUpgradeBelow = iv; break;
+case "danger": w.DangerRadius = iv; break;
+case "wreach": w.TowerReach = iv; break;
+case "depth": s.Depth = iv; break;
+case "width": s.Width = iv; break;
+case "ms": s.MaxMs = iv; break;
+case "firstms": s.FirstTurnMs = iv; break;
+case "rollout": s.RolloutTurns = iv; break;
+case "debug": s.Debug = iv != 0; break;
+case "rolloutw": s.RolloutWeight = v; break;
+case "sites": s.Macro.NearSites = iv; break;
+case "giants": s.Macro.GiantWhenTowers = iv; break;
+case "bar2": s.Macro.SecondBarracksIncome = iv; break;
+default:
+if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
+break;
 }
 }
+}
+}
+}
+
+// ===== src/RoyaleBot/Search/Eval.cs =====
+namespace Royale
+{
+public sealed class EvalWeights
+{
+public double Hp = 100;
+public double EnemyHp = 30;
+public double Dead = 1e6;
+public double Tower = 3.0;
+public double EnemyTower = 1.0;
+public double Mine = 300;
+public double EnemyMine = 100;
+public double Gold = 3;
+public double Knight = 15;
+public double EnemyKnight = 60;
+public int KnightReach = 1200;
+public double FarKnight = 1.0;
+public double Giant = 2;
+public double EnemyGiant = 2;
+public double NoBarracks = 2000;
+public double ExtraBarracks = 500;
+public int MaxBarracks = 2;
+public double Cover = 300;
+public double Noise = 1;
+public bool Set(string key, double v)
+{
+switch (key)
+{
+case "hp": Hp = v; break;
+case "ehp": EnemyHp = v; break;
+case "tower": Tower = v; break;
+case "etower": EnemyTower = v; break;
+case "mine": Mine = v; break;
+case "emine": EnemyMine = v; break;
+case "gold": Gold = v; break;
+case "knight": Knight = v; break;
+case "eknight": EnemyKnight = v; break;
+case "reach": KnightReach = (int)v; break;
+case "far": FarKnight = v; break;
+case "giant": Giant = v; break;
+case "egiant": EnemyGiant = v; break;
+case "nobar": NoBarracks = v; break;
+case "extrabar": ExtraBarracks = v; break;
+case "maxbar": MaxBarracks = (int)v; break;
+case "cover": Cover = v; break;
+case "noise": Noise = v; break;
+default: return false;
+}
+return true;
+}
+}
+public static class Eval
+{
+public static double Score(SimState s, int me, EvalWeights w, Random rnd)
+{
+int e = 1 - me;
+int myHp = s.Health[me], enHp = s.Health[e];
+if (myHp <= 0) return -w.Dead + s.Turn * 10;
+double v = w.Hp * myHp - w.EnemyHp * enHp;
+if (enHp <= 0) v += w.Dead * 0.1;
+int left = Consts.MaxTurns - s.Turn;
+double mineF = Math.Min(1.0, Math.Max(0.15, left / 80.0));
+double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
+int knightBarracks = 0, barracks = 0;
+bool enemyKnightsComing = false;
+double qx = s.QueenX[me], qy = s.QueenY[me];
+bool covered = false;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+switch (st.Structure)
+{
+case StructureType.Tower:
+if (st.Owner == me)
+{
+v += w.Tower * st.Hp * towerF;
+if (!covered && SimState.D2(st.X, st.Y, qx, qy) < (double)st.AttackRadius * st.AttackRadius) covered = true;
+}
+else v -= w.EnemyTower * st.Hp * towerF;
+break;
+case StructureType.Mine:
+if (st.Owner == me) v += w.Mine * st.Rate * mineF;
+else v -= w.EnemyMine * st.Rate * mineF;
+break;
+case StructureType.Barracks:
+if (st.Owner == me)
+{
+barracks++;
+if (st.CreepType == 0) knightBarracks++;
+}
+else if (st.CreepType == 0 && st.Training) enemyKnightsComing = true;
+break;
+}
+}
+if (knightBarracks == 0) v -= w.NoBarracks;
+if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
+v += w.Gold * s.Gold[me];
+double eqx = s.QueenX[e], eqy = s.QueenY[e];
+for (int i = 0; i < s.CreepCount[me]; i++)
+{
+SimUnit c = s.Creeps[me][i];
+if (c.Type == 0) v += w.Knight * c.Health * Closeness(c.X, c.Y, eqx, eqy, w);
+else if (c.Type == 2) v += w.Giant * c.Health;
+}
+for (int i = 0; i < s.CreepCount[e]; i++)
+{
+SimUnit c = s.Creeps[e][i];
+if (c.Type == 0)
+{
+v -= w.EnemyKnight * c.Health;
+enemyKnightsComing = true;
+}
+else if (c.Type == 2) v -= w.EnemyGiant * c.Health;
+}
+if (enemyKnightsComing && covered) v += w.Cover;
+if (w.Noise > 0) v += (rnd.NextDouble() - 0.5) * w.Noise;
+return v;
+}
+private static double Closeness(double x, double y, double tx, double ty, EvalWeights w)
+{
+double d = Math.Sqrt(SimState.D2(x, y, tx, ty));
+if (d >= w.KnightReach) return w.FarKnight;
+return w.FarKnight + (1 - w.FarKnight) * (1 - d / w.KnightReach);
+}
+}
+}
+
+// ===== src/RoyaleBot/Search/Macro.cs =====
+namespace Royale
+{
+public sealed class Macro
+{
+public int NearSites = 4;
+public int GiantWhenTowers = 2;
+public int SecondBarracksIncome = 6;
+public int KnightZone = 250;
+private readonly List<int> _train = new List<int>();
+private readonly int[] _near = new int[8];
+private readonly double[] _nearD = new double[8];
+public int[] Train(SimState s, int me)
+{
+_train.Clear();
+int gold = s.Gold[me];
+int enemyTowers = 0;
+for (int i = 0; i < s.Sites.Length; i++)
+if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 2) continue;
+if (enemyTowers >= GiantWhenTowers && gold >= CreepStats.Cost[2]) { _train.Add(st.Id); gold -= CreepStats.Cost[2]; }
+}
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 0) continue;
+if (gold >= CreepStats.Cost[0]) { _train.Add(st.Id); gold -= CreepStats.Cost[0]; }
+}
+return _train.Count == 0 ? SimAction.NoTrain : _train.ToArray();
+}
+public int Candidates(SimState s, int me, QueenAction[] buf)
+{
+int n = 0;
+buf[n++] = QueenAction.Wait();
+int qx = (int)s.QueenX[me], qy = (int)s.QueenY[me];
+for (int d = 0; d < 8; d++)
+{
+buf[n++] = QueenAction.Move(qx + Dx[d], qy + Dy[d]);
+}
+int knightBarracks = 0, giantBarracks = 0, enemyTowers = 0, income = 0;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure == StructureType.Tower && st.Owner != me) enemyTowers++;
+if (st.Owner != me) continue;
+if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarracks++; else if (st.CreepType == 2) giantBarracks++; }
+else if (st.Structure == StructureType.Mine) income += st.Rate;
+}
+int wantKnightBarracks = 1 + (income >= SecondBarracksIncome ? 1 : 0);
+int k = Math.Min(NearSites, _near.Length);
+int found = 0;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure == StructureType.Tower && st.Owner != me) continue;
+double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
+int pos = found < k ? found++ : -1;
+if (pos < 0)
+{
+int worst = 0;
+for (int j = 1; j < k; j++) if (_nearD[j] > _nearD[worst]) worst = j;
+if (d >= _nearD[worst]) continue;
+pos = worst;
+}
+_near[pos] = i; _nearD[pos] = d;
+}
+for (int j = 0; j < found && n < buf.Length - 5; j++)
+{
+SimSite st = s.Sites[_near[j]];
+bool takeable = st.Structure == StructureType.None || st.Owner != me;
+if (takeable)
+{
+if (Rules.Mines && st.Gold != 0 && !EnemyKnightNear(s, me, st.X, st.Y)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
+if (Rules.Towers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+if (knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
+if (Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
+}
+else if (st.Structure == StructureType.Mine)
+{
+if (st.MaxMineSize < 0 || st.Rate < st.MaxMineSize) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
+}
+else if (st.Structure == StructureType.Tower)
+{
+if (st.Hp <= Consts.TowerHpMax - Consts.TowerHpIncrement) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+}
+}
+return n;
+}
+private bool EnemyKnightNear(SimState s, int me, int x, int y)
+{
+int e = 1 - me;
+double r2 = (double)KnightZone * KnightZone;
+for (int i = 0; i < s.CreepCount[e]; i++)
+if (s.Creeps[e][i].Type == 0 && SimState.D2(s.Creeps[e][i].X, s.Creeps[e][i].Y, x, y) < r2) return true;
+return false;
+}
+private static readonly int[] Dx = { 100, 71, 0, -71, -100, -71, 0, 71 };
+private static readonly int[] Dy = { 0, 71, 100, 71, 0, -71, -100, -71 };
+}
+}
+
+// ===== src/RoyaleBot/Search/SearchStrategy.cs =====
+namespace Royale
+{
+public sealed class SearchStrategy : IStrategy
+{
+public int Depth = 12;
+public int Width = 16;
+public int MaxMs = 28;
+public int RolloutTurns = 10;
+public double RolloutWeight = 0.7;
+public bool Debug;
+public int FirstTurnMs = 500;
+public readonly EvalWeights W = new EvalWeights();
+public readonly Macro Macro = new Macro();
+private sealed class Node
+{
+public readonly SimState State = new SimState();
+public double Score;
+public QueenAction First, Last;
+}
+private readonly Random _rnd = new Random(12345);
+private readonly SimState _scratch = new SimState();
+private readonly QueenAction[] _cand = new QueenAction[32];
+private Node[] _beam, _bankA, _bankB;
+private int[] _order;
+private double[] _keys;
+private int _turn;
+private readonly TextWriter _log;
+private int _enemyGold = Consts.StartingGold;
+private int[] _enemyBarracksBusy;
+public string LastInfo = "";
+public SearchStrategy() : this(null) { }
+public SearchStrategy(TextWriter log) { _log = log; }
+private void Allocate()
+{
+int cap = Width * _cand.Length;
+if (_bankA != null && _bankA.Length >= cap) return;
+_bankA = new Node[cap]; _bankB = new Node[cap];
+for (int i = 0; i < cap; i++) { _bankA[i] = new Node(); _bankB[i] = new Node(); }
+_beam = new Node[Width];
+_order = new int[cap];
+_keys = new double[cap];
+}
+public void WarmUp(TurnClock clock) { }
+public TurnOutput Play(TurnInput t, TurnClock clock)
+{
+Allocate();
+SimState root = SimState.FromInputs(t, null, _turn);
+int me = root.MyIndex;
+UpdateEnemyGold(t);
+root.Gold[1 - me] = _enemyGold;
+long deadline = Math.Min(clock.BudgetMs - 2, _turn == 0 ? FirstTurnMs : MaxMs);
+_turn++;
+var o = new TurnOutput { Queen = QueenAction.Wait(), Train = Macro.Train(root, me) };
+QueenAction best = Search(root, me, clock, deadline);
+o.Queen = best;
+return o;
+}
+private void UpdateEnemyGold(TurnInput t)
+{
+if (_enemyBarracksBusy == null || _enemyBarracksBusy.Length != t.Sites.Length)
+{
+_enemyBarracksBusy = new int[t.Sites.Length];
+_enemyGold = Consts.StartingGold;
+}
+int income = 0;
+for (int i = 0; i < t.Sites.Length; i++)
+{
+Site st = t.Sites[i];
+if (st.IsEnemy && st.Structure == StructureType.Mine) income += st.Param1 > 0 ? st.Param1 : 1;
+int busy = st.IsEnemy && st.Structure == StructureType.Barracks ? st.Param1 : 0;
+if (busy > 0 && _enemyBarracksBusy[i] == 0 && st.Param2 >= 0 && st.Param2 < 3) _enemyGold -= CreepStats.Cost[st.Param2];
+_enemyBarracksBusy[i] = busy;
+}
+if (_turn > 0) _enemyGold += Rules.FixedIncome ? Consts.WoodFixedIncome : income;
+if (_enemyGold < 0) _enemyGold = 0;
+}
+private QueenAction Search(SimState root, int me, TurnClock clock, long deadline)
+{
+SimAction enemy = SimAction.Wait();
+Node[] bank = _bankA;
+int beamCount = 0;
+QueenAction bestFirst = QueenAction.Wait();
+double bestScore = double.NegativeInfinity;
+int depthDone = 0, expanded = 0;
+int filled = Expand(root, me, enemy, bank, 0, true, clock, deadline, ref expanded, out bool _);
+if (filled == 0) return bestFirst;
+if (Debug && _log != null)
+{
+_log.WriteLine("root: gold " + root.Gold[me] + " enemy gold " + root.Gold[1 - me] + " turn " + root.Turn + " me " + me + " queen " + root.QueenX[me] + "," + root.QueenY[me]);
+for (int i = 0; i < filled; i++)
+{
+_scratch.CopyFrom(bank[i].State);
+for (int r = 0; r < RolloutTurns && !_scratch.GameOver; r++)
+{
+var mine = new SimAction { Queen = bank[i].Last, Train = Macro.Train(_scratch, me), BuildTypeValid = true };
+enemy.Train = Macro.Train(_scratch, 1 - me);
+if (me == 0) _scratch.Step(mine, enemy); else _scratch.Step(enemy, mine);
+}
+_log.WriteLine("  cand " + bank[i].Last.Format().PadRight(24) + " static " + bank[i].Score.ToString("F0").PadLeft(7) + " rollout " + Eval.Score(_scratch, me, W, _rnd).ToString("F0").PadLeft(7) + " hp " + _scratch.Health[me] + " towers " + CountOwn(_scratch, me, StructureType.Tower) + " mines " + CountOwn(_scratch, me, StructureType.Mine));
+}
+}
+beamCount = Select(bank, filled);
+bestFirst = _beam[0].First; bestScore = _beam[0].Score; depthDone = 1;
+long searchDeadline = deadline;
+for (int d = 1; d < Depth; d++)
+{
+if (RolloutTurns > 0 && expanded > 0)
+{
+double stepMs = (double)clock.ElapsedMs / expanded;
+searchDeadline = deadline - (long)Math.Ceiling(stepMs * beamCount * RolloutTurns * 1.5) - 1;
+}
+Node[] next = bank == _bankA ? _bankB : _bankA;
+int n = 0;
+bool timeUp = false;
+for (int b = 0; b < beamCount && !timeUp; b++)
+{
+Node parent = _beam[b];
+if (parent.State.GameOver) { CopyNode(parent, next[n++]); continue; }
+n += Expand(parent.State, me, enemy, next, n, false, clock, searchDeadline, ref expanded, out timeUp, parent.First);
+}
+if (timeUp || n == 0) break;
+beamCount = Select(next, n);
+bank = next;
+bestFirst = _beam[0].First; bestScore = _beam[0].Score; depthDone = d + 1;
+}
+if (RolloutTurns > 0 && beamCount > 0)
+{
+double bestMix = double.NegativeInfinity;
+int rolled = 0;
+for (int b = 0; b < beamCount; b++)
+{
+Node leaf = _beam[b];
+double mix = leaf.Score;
+if (!leaf.State.GameOver && clock.ElapsedMs < deadline)
+{
+_scratch.CopyFrom(leaf.State);
+for (int r = 0; r < RolloutTurns && !_scratch.GameOver && clock.ElapsedMs < deadline; r++)
+{
+var mine = new SimAction { Queen = leaf.Last, Train = Macro.Train(_scratch, me), BuildTypeValid = true };
+enemy.Train = Macro.Train(_scratch, 1 - me);
+if (me == 0) _scratch.Step(mine, enemy); else _scratch.Step(enemy, mine);
+}
+double after = Eval.Score(_scratch, me, W, _rnd);
+mix = (1 - RolloutWeight) * leaf.Score + RolloutWeight * after;
+rolled++;
+}
+if (mix > bestMix) { bestMix = mix; bestFirst = leaf.First; bestScore = mix; }
+}
+expanded += rolled * RolloutTurns;
+}
+LastInfo = "depth " + depthDone + " nodes " + expanded + " score " + bestScore.ToString("F0") + " " + clock.ElapsedMs + " ms";
+if (_log != null) _log.WriteLine(LastInfo);
+return bestFirst;
+}
+private static int CountOwn(SimState s, int me, StructureType t)
+{
+int n = 0;
+for (int i = 0; i < s.Sites.Length; i++) if (s.Sites[i].Owner == me && s.Sites[i].Structure == t) n++;
+return n;
+}
+private static void CopyNode(Node from, Node to)
+{
+to.State.CopyFrom(from.State);
+to.Score = from.Score;
+to.First = from.First;
+}
+private int Expand(SimState state, int me, SimAction enemy, Node[] bank, int offset, bool isRoot, TurnClock clock, long deadline, ref int expanded, out bool timeUp, QueenAction first = default(QueenAction))
+{
+timeUp = false;
+int nc = Macro.Candidates(state, me, _cand);
+int[] train = Macro.Train(state, me);
+enemy.Train = Macro.Train(state, 1 - me);
+int n = 0;
+for (int i = 0; i < nc; i++)
+{
+if (!isRoot && (expanded & 7) == 0 && clock.ElapsedMs >= deadline) { timeUp = true; break; }
+Node child = bank[offset + n];
+child.State.CopyFrom(state);
+var mine = new SimAction { Queen = _cand[i], Train = train, BuildTypeValid = true };
+if (me == 0) child.State.Step(mine, enemy); else child.State.Step(enemy, mine);
+child.Score = Eval.Score(child.State, me, W, _rnd);
+child.First = isRoot ? _cand[i] : first;
+child.Last = _cand[i];
+n++;
+expanded++;
+}
+return n;
+}
+private readonly HashSet<long> _seen = new HashSet<long>();
+private int Select(Node[] bank, int n)
+{
+for (int i = 0; i < n; i++) { _order[i] = i; _keys[i] = -bank[i].Score; }
+Array.Sort(_keys, _order, 0, n);
+_seen.Clear();
+int count = 0;
+for (int i = 0; i < n && count < Width; i++)
+{
+Node node = bank[_order[i]];
+if (!_seen.Add(Key(node.State))) continue;
+_beam[count++] = node;
+}
+return count;
+}
+private static long Key(SimState s)
+{
+int me = s.MyIndex;
+long k = ((long)(s.QueenX[me] / 8) * 1000 + (long)(s.QueenY[me] / 8)) * 1000003L;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Owner != me || st.Structure == StructureType.None) continue;
+k = k * 31 + i * 7 + (int)st.Structure * 3 + st.Rate + st.Hp / 100 + (st.Training ? 1 : 0);
+}
+return k * 131 + s.Gold[me];
 }
 }
 }

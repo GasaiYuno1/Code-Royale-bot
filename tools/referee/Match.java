@@ -153,6 +153,13 @@ public class Match {
                 }
             }
             if (log != null) {
+                for (int p = 0; p < 2; p++) {
+                    List<String> err = r.errors == null ? null : r.errors.get(String.valueOf(p));
+                    if (err == null) continue;
+                    try (PrintWriter pw = new PrintWriter(new File(log, "game-" + (seed + g) + ".stderr" + p + ".txt"), "UTF-8")) {
+                        for (String e : err) if (e != null) pw.println(e.trim());
+                    }
+                }
                 try (PrintWriter pw = new PrintWriter(new File(log, "game-" + (seed + g) + ".log"), "UTF-8")) {
                     pw.println("# game seed=" + (seed + g) + " league=" + System.getProperty("league.level", "1") + " p0=" + a + " p1=" + b);
                     List<String>[] blocks = new List[] { agents[0].blocks(), agents[1].blocks() };

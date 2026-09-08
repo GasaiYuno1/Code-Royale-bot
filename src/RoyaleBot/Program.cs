@@ -11,10 +11,13 @@ namespace Royale
             var stdout = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = false };
             var stderr = Console.Error;
 
-            var strategy = new WoodStrategy();
-            Tuning.Apply(args, strategy, stderr);
-            stderr.WriteLine("league " + Rules.League + " (" + Rules.Name + ")");
-            IStrategy chosen = strategy;
+            var wood = new WoodStrategy();
+            var search = new SearchStrategy(stderr);
+            bool useWood = false;
+            foreach (string a in args) if (a == "wood=1") useWood = true;
+            Tuning.Apply(args, wood, search, stderr);
+            stderr.WriteLine("league " + Rules.League + " (" + Rules.Name + ") " + (useWood ? "wood" : "search"));
+            IStrategy chosen = useWood ? (IStrategy)wood : search;
             foreach (string a in args) if (a.StartsWith("random=")) chosen = new RandomStrategy(int.Parse(a.Substring(7)));
             var bot = new Bot(chosen, stderr);
             bot.Run(Console.In, stdout);
@@ -24,25 +27,40 @@ namespace Royale
     /// <summary>Аргументы key=value для локальных матчей (на CodinGame аргументов нет).</summary>
     public static class Tuning
     {
-        public static void Apply(string[] args, WoodStrategy s, TextWriter log)
+        public static void Apply(string[] args, WoodStrategy w, SearchStrategy s, TextWriter log)
         {
             foreach (string a in args)
             {
                 int eq = a.IndexOf('=');
                 if (eq <= 0) continue;
                 string key = a.Substring(0, eq);
-                int v;
-                if (!int.TryParse(a.Substring(eq + 1), out v)) { log.WriteLine("bad value: " + a); continue; }
+                double v;
+                if (!double.TryParse(a.Substring(eq + 1), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out v)) { log.WriteLine("bad value: " + a); continue; }
+                int iv = (int)v;
                 switch (key)
                 {
-                    case "league": Rules.League = v; break;
-                    case "income": s.TargetIncome = v; break;
-                    case "towers": s.TargetTowers = v; break;
-                    case "upgrade": s.TowerUpgradeBelow = v; break;
-                    case "danger": s.DangerRadius = v; break;
-                    case "reach": s.TowerReach = v; break;
-                    case "random": break;
-                    default: log.WriteLine("unknown key: " + key); break;
+                    case "league": Rules.League = iv; break;
+                    case "wood": case "random": break;
+                    // WoodStrategy
+                    case "income": w.TargetIncome = iv; break;
+                    case "towers": w.TargetTowers = iv; break;
+                    case "upgrade": w.TowerUpgradeBelow = iv; break;
+                    case "danger": w.DangerRadius = iv; break;
+                    case "wreach": w.TowerReach = iv; break;
+                    // SearchStrategy
+                    case "depth": s.Depth = iv; break;
+                    case "width": s.Width = iv; break;
+                    case "ms": s.MaxMs = iv; break;
+                    case "firstms": s.FirstTurnMs = iv; break;
+                    case "rollout": s.RolloutTurns = iv; break;
+                    case "debug": s.Debug = iv != 0; break;
+                    case "rolloutw": s.RolloutWeight = v; break;
+                    case "sites": s.Macro.NearSites = iv; break;
+                    case "giants": s.Macro.GiantWhenTowers = iv; break;
+                    case "bar2": s.Macro.SecondBarracksIncome = iv; break;
+                    default:
+                        if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
+                        break;
                 }
             }
         }
