@@ -28,6 +28,7 @@ namespace Royale
     /// <summary>Крип. Координаты double внутри хода, целые между ходами.</summary>
     public struct SimUnit
     {
+        public bool ShotThisTurn;   // подбор под арену: башня не бьёт уже обстрелянного в этот ход (TowerTargetMode 5)
         public double X, Y;
         public int Type;       // 0 рыцарь, 1 лучник, 2 гигант
         public int Health;
@@ -50,7 +51,28 @@ namespace Royale
         public int[] Gold = new int[2];   // Gold[1 - MyIndex] может быть неизвестен (-1)
         /// <summary>Старый порядок сущностей в коллизиях (крипы p0, королева p0, крипы p1, королева p1) — закомментированный
         /// вариант allEntities() в Referee.kt; проверяется по реплеям арены (режим arenasim).</summary>
-        public static bool InterleavedQueens;
+        public static bool InterleavedQueens = true;   // арена: порядок тел как до PR #3 рефери (крипы игрока, его королева, крипы второго, его королева); партия 902139387 совпадает 48 ходов против 18
+        /// <summary>При InterleavedQueens: королева игрока перед его крипами (listOf(queen) + creeps), иначе после.</summary>
+        public static bool QueenFirst;
+        /// <summary>Подбор под арену: крипы ходят до действий королев (CreepsFirst) / цель рыцаря — позиция чужой королевы на начало хода (TargetPrevQueen).</summary>
+        public static bool CreepsFirst, TargetPrevQueen;
+        public double[] PrevQueenX = new double[2], PrevQueenY = new double[2];
+        /// <summary>
+        /// Спавн как на арене CodinGame (по ключевым кадрам t=0 просмотрщика, две партии, оба игрока): точка
+        /// towards(чужая королева, 30) от центра сайта плюс углы единичного квадрата в порядке (+1,−1), (−1,+1), (+1,+1), (−1,−1),
+        /// у обоих игроков одинаково. В исходниках на GitHub — смещение (±i, ±i) до towards (ArenaSpawn = false).
+        /// Из точных точек появления расталкивание воспроизводит позиции арены с точностью до округления.
+        /// </summary>
+        public static bool ArenaSpawn = true;
+        /// <summary>Выбор цели башни среди чужих крипов: 0 — ближайший к башне (GitHub), 1 — минимальный HP в радиусе, 2 — первый по списку в радиусе, 3 — последний по списку в радиусе (подбор под арену).</summary>
+        public static int TowerTargetMode;
+        /// <summary>Формула урона башни: 3 (умолчание, арена) — параметры ниже; 0 — GitHub (3 + (радиус − (дистанция − радиус сайта))/200); 1 — версия 2018-04-05; 2 — версия 2018-04-06…13.</summary>
+        public static int TowerDamageMode = 3;
+        /// <summary>Параметры формулы урона башни крипу для подбора под арену: минимум, дистанция роста, вычитать ли радиус сайта (режим 3).</summary>
+        public static int TowerDamageMin = 3, TowerDamageClimb = 200;
+        public static bool TowerDamageSubtractRadius = false, TowerDamageUseDiff = true;   // арена: без вычитания радиуса сайта (46 из 51 выстрелов, остальные — добивания); GitHub вычитает
+        /// <summary>Башня сначала тает (и пересчитывает радиус), потом стреляет (подбор под арену).</summary>
+        public static bool TowerMeltFirst;
         /// <summary>Итераций расталкивания на подшаг движения крипов (в рефери 1; проверяется по арене).</summary>
         public static int SubstepIterations = 1;
         public bool GameOver;

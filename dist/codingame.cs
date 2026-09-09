@@ -308,7 +308,7 @@ public static readonly int[] Speed = { 100, 75, 50 };
 public static readonly int[] Range = { 0, 200, 0 };
 public static readonly int[] Radius = { 20, 25, 40 };
 public static readonly int[] Mass = { 400, 900, 2000 };
-public static readonly int[] Hp = { 30, 45, 200 };
+public static readonly int[] Hp = { 25, 45, 200 };
 public static readonly int[] BuildTime = { 5, 8, 10 };
 public static readonly string[] Name = { "KNIGHT", "ARCHER", "GIANT" };
 }
@@ -1312,6 +1312,7 @@ Structure = StructureType.None; Owner = -1; Rate = 0; Hp = 0; AttackRadius = 0; 
 }
 public struct SimUnit
 {
+public bool ShotThisTurn;
 public double X, Y;
 public int Type;
 public int Health;
@@ -1327,7 +1328,16 @@ public int[] CreepCount = new int[2];
 public double[] QueenX = new double[2], QueenY = new double[2];
 public int[] Health = new int[2];
 public int[] Gold = new int[2];
-public static bool InterleavedQueens;
+public static bool InterleavedQueens = true;
+public static bool QueenFirst;
+public static bool CreepsFirst, TargetPrevQueen;
+public double[] PrevQueenX = new double[2], PrevQueenY = new double[2];
+public static bool ArenaSpawn = true;
+public static int TowerTargetMode;
+public static int TowerDamageMode = 3;
+public static int TowerDamageMin = 3, TowerDamageClimb = 200;
+public static bool TowerDamageSubtractRadius = false, TowerDamageUseDiff = true;
+public static bool TowerMeltFirst;
 public static int SubstepIterations = 1;
 public bool GameOver;
 public int Winner = -1;
@@ -1534,10 +1544,14 @@ private const double Frame = 1.0 / 5;
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 public void Step(SimAction a0, SimAction a1)
 {
+if (TowerTargetMode >= 5)
+for (int p = 0; p < 2; p++) for (int i = 0; i < CreepCount[p]; i++) Creeps[p][i].ShotThisTurn = false;
 if (GameOver) return;
+PrevQueenX[0] = QueenX[0]; PrevQueenY[0] = QueenY[0]; PrevQueenX[1] = QueenX[1]; PrevQueenY[1] = QueenY[1];
+if (CreepsFirst) ProcessCreeps();
 ProcessPlayerActions(a0, a1);
 if (GameOver) { Turn++; return; }
-ProcessCreeps();
+if (!CreepsFirst) ProcessCreeps();
 for (int i = 0; i < Sites.Length; i++) ActSite(i);
 if (Rules.FixedIncome)
 {
@@ -1721,6 +1735,40 @@ if (d < bestD) { bestD = d; best = i; }
 }
 return best;
 }
+private int TowerTarget(SimSite s, int e, double r2)
+{
+int best = -1;
+int bestHp = int.MaxValue;
+double bestD = double.MaxValue;
+double qx = QueenX[s.Owner], qy = QueenY[s.Owner];
+for (int i = 0; i < CreepCount[e]; i++)
+{
+if (D2(Creeps[e][i].X, Creeps[e][i].Y, s.X, s.Y) >= r2) continue;
+switch (TowerTargetMode)
+{
+case 1: if (Creeps[e][i].Health < bestHp) { bestHp = Creeps[e][i].Health; best = i; } break;
+case 2: if (best < 0) best = i; break;
+case 4:
+case 5:
+{
+if (TowerTargetMode == 5 && Creeps[e][i].ShotThisTurn) break;
+double d = D2(Creeps[e][i].X, Creeps[e][i].Y, qx, qy);
+if (d < bestD) { bestD = d; best = i; }
+break;
+}
+case 6:
+{
+if (Creeps[e][i].ShotThisTurn) break;
+double d = D2(Creeps[e][i].X, Creeps[e][i].Y, s.X, s.Y);
+if (d < bestD) { bestD = d; best = i; }
+break;
+}
+default: best = i; break;
+}
+}
+if (best >= 0) Creeps[e][best].ShotThisTurn = true;
+return best;
+}
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void MoveCreep(int p, int i)
 {
@@ -1730,7 +1778,7 @@ switch (c.Type)
 {
 case 0:
 {
-double qx = QueenX[e], qy = QueenY[e];
+double qx = TargetPrevQueen ? PrevQueenX[e] : QueenX[e], qy = TargetPrevQueen ? PrevQueenY[e] : QueenY[e];
 int lim = c.Radius + Consts.QueenRadius + CreepStats.Range[0];
 if (D2(c.X, c.Y, qx, qy) > (double)(lim * lim))
 {
@@ -1841,29 +1889,53 @@ break;
 case StructureType.Tower:
 {
 int e = 1 - s.Owner;
-int t = ClosestEnemyCreep(s.Owner, s.X, s.Y);
+if (TowerMeltFirst)
+{
+s.Hp -= Consts.TowerMeltRate;
+s.AttackRadius = (int)Math.Sqrt((s.Hp * Consts.TowerCoveragePerHp + s.Area) / Math.PI);
+if (s.Hp <= 0) { s.Clear(); Sites[idx] = s; break; }
+}
 double r2 = (double)(s.AttackRadius * s.AttackRadius);
+int t = TowerTargetMode == 0 ? ClosestEnemyCreep(s.Owner, s.X, s.Y) : TowerTarget(s, e, r2);
 if (t >= 0 && D2(Creeps[e][t].X, Creeps[e][t].Y, s.X, s.Y) < r2)
 {
 ref SimUnit c = ref Creeps[e][t];
 double shot = Math.Sqrt(D2(c.X, c.Y, s.X, s.Y)) - s.Radius;
 double diff = s.AttackRadius - shot;
-DamageCreep(ref c, Consts.TowerCreepDamageMin + (int)(diff / Consts.TowerDamageClimbDistance));
+if (TowerDamageMode == 1) DamageCreep(ref c, 5 + (int)(shot / Consts.TowerDamageClimbDistance));
+else if (TowerDamageMode == 2) DamageCreep(ref c, 5 + (int)(diff / Consts.TowerDamageClimbDistance));
+else if (TowerDamageMode == 3)
+{
+double sd = TowerDamageSubtractRadius ? shot : shot + s.Radius;
+double x = TowerDamageUseDiff ? s.AttackRadius - sd : sd;
+DamageCreep(ref c, TowerDamageMin + (int)(x / TowerDamageClimb));
+}
+else DamageCreep(ref c, Consts.TowerCreepDamageMin + (int)(diff / Consts.TowerDamageClimbDistance));
 }
 else if (D2(QueenX[e], QueenY[e], s.X, s.Y) < r2)
 {
 double shot = Math.Sqrt(D2(QueenX[e], QueenY[e], s.X, s.Y)) - s.Radius;
 double diff = s.AttackRadius - shot;
-int dmg = Consts.TowerQueenDamageMin + (int)(diff / Consts.TowerDamageClimbDistance);
+int dmg;
+if (TowerDamageMode == 1) dmg = Consts.TowerQueenDamageMin + (int)(shot / Consts.TowerDamageClimbDistance);
+else if (TowerDamageMode == 3)
+{
+double sd = TowerDamageSubtractRadius ? shot : shot + s.Radius;
+dmg = Consts.TowerQueenDamageMin + (int)((TowerDamageUseDiff ? s.AttackRadius - sd : sd) / TowerDamageClimb);
+}
+else dmg = Consts.TowerQueenDamageMin + (int)(diff / Consts.TowerDamageClimbDistance);
 if (dmg > 0)
 {
 Health[e] -= dmg;
 if (Health[e] < 0) Health[e] = 0;
 }
 }
+if (!TowerMeltFirst)
+{
 s.Hp -= Consts.TowerMeltRate;
 s.AttackRadius = (int)Math.Sqrt((s.Hp * Consts.TowerCoveragePerHp + s.Area) / Math.PI);
 if (s.Hp <= 0) s.Clear();
+}
 Sites[idx] = s;
 break;
 }
@@ -1883,6 +1955,8 @@ break;
 }
 }
 }
+private static readonly int[] ArenaSpawnDx = { 1, -1, 1, -1 };
+private static readonly int[] ArenaSpawnDy = { -1, 1, 1, -1 };
 private void Spawn(int idx)
 {
 SimSite s = Sites[idx];
@@ -1891,9 +1965,18 @@ int sign = p == 1 ? -1 : 1;
 for (int iter = 0; iter < CreepStats.Count[type]; iter++)
 {
 var c = new SimUnit { Type = type, Health = CreepStats.Hp[type], Radius = CreepStats.Radius[type], Mass = CreepStats.Mass[type] };
+if (ArenaSpawn)
+{
+c.X = s.X; c.Y = s.Y;
+Towards(ref c.X, ref c.Y, QueenX[e], QueenY[e], 30.0);
+c.X += ArenaSpawnDx[iter & 3]; c.Y += ArenaSpawnDy[iter & 3];
+}
+else
+{
 c.X = s.X + sign * iter;
 c.Y = s.Y + sign * iter;
 Towards(ref c.X, ref c.Y, QueenX[e], QueenY[e], 30.0);
+}
 AddCreep(p, c);
 }
 FixCollisions(999);
@@ -1967,12 +2050,13 @@ if (_bodies.Length < n) _bodies = new Body[Math.Max(n, _bodies.Length * 2)];
 int k = 0;
 for (int p = 0; p < 2; p++)
 {
+if (InterleavedQueens && QueenFirst) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
 for (int i = 0; i < CreepCount[p]; i++)
 {
 SimUnit c = Creeps[p][i];
 _bodies[k++] = new Body { X = c.X, Y = c.Y, Radius = c.Radius, Mass = c.Mass };
 }
-if (InterleavedQueens) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
+if (InterleavedQueens && !QueenFirst) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
 }
 if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
@@ -1986,11 +2070,12 @@ private void StoreBodies()
 int k = 0;
 for (int p = 0; p < 2; p++)
 {
+if (InterleavedQueens && QueenFirst) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
 for (int i = 0; i < CreepCount[p]; i++)
 {
 Creeps[p][i].X = _bodies[k].X; Creeps[p][i].Y = _bodies[k].Y; k++;
 }
-if (InterleavedQueens) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
+if (InterleavedQueens && !QueenFirst) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
 }
 if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }

@@ -64,7 +64,7 @@ namespace Royale
         public static readonly int[] Range = { 0, 200, 0 };
         public static readonly int[] Radius = { 20, 25, 40 };
         public static readonly int[] Mass = { 400, 900, 2000 };
-        public static readonly int[] Hp = { 30, 45, 200 };
+        public static readonly int[] Hp = { 25, 45, 200 };   // рыцарь 25 на арене (подсказки реплеев: 17 528 спавнов), в исходниках на GitHub 30
         public static readonly int[] BuildTime = { 5, 8, 10 };
         public static readonly string[] Name = { "KNIGHT", "ARCHER", "GIANT" };
     }

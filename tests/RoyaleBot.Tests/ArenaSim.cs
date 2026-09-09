@@ -7,7 +7,7 @@ namespace Royale.Tests
     /// <summary>
     /// Прогон партии арены через симулятор: карта из локального лога (тот же seed в рефери), действия обоих игроков
     /// из реплея (tools/arena: *.actions.txt), сравнение золота и HP по ходам с HUD арены (*.hud.txt).
-    /// arenasim <лог> <actions.txt> <hud.txt> [order=old]
+    /// arenasim <лог> <actions.txt> <hud.txt> [order=old] [spawn=github] [iters=N] [dump=file]
     /// </summary>
     public static class ArenaSim
     {
@@ -15,9 +15,25 @@ namespace Royale.Tests
         {
             string logPath = args[1], actionsPath = args[2], hudPath = args[3];
             string dump = null;
+            bool verbose = false;
             for (int i = 4; i < args.Length; i++)
             {
                 if (args[i] == "order=old") SimState.InterleavedQueens = true;
+                else if (args[i] == "order=new") SimState.InterleavedQueens = false;
+                else if (args[i] == "damage=github") SimState.TowerDamageMode = 0;
+                else if (args[i] == "spawn=github") SimState.ArenaSpawn = false;
+                else if (args[i].StartsWith("target=")) SimState.TowerTargetMode = int.Parse(args[i].Substring(7));
+                else if (args[i].StartsWith("damage=")) SimState.TowerDamageMode = int.Parse(args[i].Substring(7));
+                else if (args[i] == "verbose=1") verbose = true;
+                else if (args[i].StartsWith("khp=")) CreepStats.Hp[0] = int.Parse(args[i].Substring(4));
+                else if (args[i] == "meltfirst=1") SimState.TowerMeltFirst = true;
+                else if (args[i] == "qfirst=1") SimState.QueenFirst = true;
+                else if (args[i] == "creepsfirst=1") SimState.CreepsFirst = true;
+                else if (args[i] == "prevqueen=1") SimState.TargetPrevQueen = true;
+                else if (args[i].StartsWith("dmin=")) { SimState.TowerDamageMode = 3; SimState.TowerDamageMin = int.Parse(args[i].Substring(5)); }
+                else if (args[i].StartsWith("dclimb=")) SimState.TowerDamageClimb = int.Parse(args[i].Substring(7));
+                else if (args[i] == "dradius=0") SimState.TowerDamageSubtractRadius = false;
+                else if (args[i] == "ddiff=0") SimState.TowerDamageUseDiff = false;
                 else if (args[i].StartsWith("iters=")) SimState.SubstepIterations = int.Parse(args[i].Substring(6));
                 else if (args[i].StartsWith("dump=")) dump = args[i].Substring(5);
             }
@@ -67,9 +83,11 @@ namespace Royale.Tests
                 {
                     for (int p = 0; p < 2; p++)
                     {
-                        dw.WriteLine(turn + " " + p + " -1 " + (int)s.QueenX[p] + " " + (int)s.QueenY[p]);
-                        for (int i = 0; i < s.CreepCount[p]; i++) dw.WriteLine(turn + " " + p + " " + s.Creeps[p][i].Type + " " + (int)s.Creeps[p][i].X + " " + (int)s.Creeps[p][i].Y);
+                        dw.WriteLine(turn + " " + p + " -1 " + (int)s.QueenX[p] + " " + (int)s.QueenY[p] + " hp " + s.Health[p]);
+                        for (int i = 0; i < s.CreepCount[p]; i++) dw.WriteLine(turn + " " + p + " " + s.Creeps[p][i].Type + " " + (int)s.Creeps[p][i].X + " " + (int)s.Creeps[p][i].Y + " hp " + s.Creeps[p][i].Health);
                     }
+                    for (int i = 0; i < s.Sites.Length; i++)
+                        if (s.Sites[i].Structure == StructureType.Tower) dw.WriteLine(turn + " " + s.Sites[i].Owner + " T " + s.Sites[i].Id + " " + s.Sites[i].Hp + " r " + s.Sites[i].AttackRadius);
                 }
                 string[] h;
                 if (!hud.TryGetValue(turn, out h)) continue;
@@ -79,7 +97,7 @@ namespace Royale.Tests
                 else
                 {
                     if (firstDiff < 0) firstDiff = turn;
-                    if (turn - firstDiff < 4) Console.WriteLine("turn " + turn + ": sim " + mine + " vs arena " + arena);
+                    if (turn - firstDiff < 4 || verbose) Console.WriteLine("turn " + turn + ": sim " + mine + " vs arena " + arena);
                 }
             }
             if (dw != null) dw.Close();
