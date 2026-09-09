@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Страница «скопировать код бота» для телефона: одна кнопка кладёт dist/codingame.cs в буфер обмена.
+"""Страница «скопировать код бота» для телефона: одна кнопка кладёт dist/codingame.cs в буфер обмена (склейка под Bronze и выше).
 
 Запуск: python3 tools/paste_page.py [выходной файл]   (по умолчанию build/paste.html)
 Страница публикуется как артефакт claude.ai; на CodinGame файлы с телефона не загрузить, а буфер обмена — можно.
@@ -126,18 +126,6 @@ def main() -> None:
   .meta dt {{ font-size: 12px; color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }}
   .meta dd {{ margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }}
   .meta code {{ font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; font-size: 14px; }}
-  .league {{
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    padding: 12px 16px 14px;
-    background: var(--surface);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px 18px;
-  }}
-  .league legend {{ font-weight: 600; padding: 0 6px; }}
-  .league label {{ display: inline-flex; align-items: center; gap: 6px; font-weight: 500; }}
-  .league .hint {{ flex-basis: 100%; font-size: 13px; color: var(--muted); }}
   ol.steps {{
     margin: 0;
     padding: 0 0 0 26px;
@@ -237,19 +225,11 @@ def main() -> None:
     <div><dt>Коммит</dt><dd><code>{html.escape(commit)}</code></dd></div>
     <div><dt>Собрано</dt><dd>{today}</dd></div>
     <div><dt>Размер</dt><dd>{chars:,} символов, {lines:,} строк</dd></div>
+    <div><dt>Лига</dt><dd>Bronze и выше</dd></div>
   </dl>
 
-  <fieldset class="league" id="league">
-    <legend>Лига, в которой играет бот</legend>
-    <label><input type="radio" name="league" value="1" checked> Wood 3</label>
-    <label><input type="radio" name="league" value="2"> Wood 2</label>
-    <label><input type="radio" name="league" value="3"> Wood 1</label>
-    <label><input type="radio" name="league" value="4"> Bronze и выше</label>
-    <div class="hint">Из ввода лига не определяется, а постройка, запрещённая в лиге, = поражение. Выбор подставляется в код при копировании.</div>
-  </fieldset>
-
   <ol class="steps">
-    <li>Выбери лигу выше, потом нажми «Скопировать код» внизу экрана.</li>
+    <li>Нажми «Скопировать код» внизу экрана.</li>
     <li>Открой задачу в IDE CodinGame, выбери язык C#, очисти редактор.</li>
     <li>Вставь и нажми «Play my code» (или «Submit» для арены).</li>
   </ol>
@@ -301,17 +281,8 @@ def main() -> None:
     return ok;
   }}
 
-  var original = ta.value;
-  function withLeague() {{
-    var sel = document.querySelector('input[name="league"]:checked');
-    var league = sel ? sel.value : '1';
-    return original.replace(/public const int DefaultLeague = \d+;/, 'public const int DefaultLeague = ' + league + ';');
-  }}
-  document.getElementById('league').addEventListener('change', function () {{ ta.value = withLeague(); }});
-
   btn.addEventListener('click', function () {{
-    var text = withLeague();
-    ta.value = text;
+    var text = ta.value;
     if (navigator.clipboard && navigator.clipboard.writeText) {{
       navigator.clipboard.writeText(text).then(function () {{
         report(true, 'В буфере ' + text.length.toLocaleString('ru-RU') + ' символов' + (text.length === expected ? '' : ' (ожидалось ' + expected + ')'));

@@ -261,7 +261,7 @@ namespace Royale
 {
 public static class Rules
 {
-public const int DefaultLeague = 1;
+public const int DefaultLeague = 4;
 public static int League = DefaultLeague;
 public static bool Mines { get { return League >= 3; } }
 public static bool Towers { get { return League >= 2; } }

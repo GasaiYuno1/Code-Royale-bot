@@ -4,12 +4,12 @@ namespace Royale
 {
     /// <summary>
     /// Лига, под которую собран бот. Из ввода лига не определяется, а BUILD постройки, отключённой в лиге,
-    /// убивает бота (PlayerInputException в рефери). Перед вставкой на CodinGame выставить DefaultLeague.
-    /// 1 = Wood 3, 2 = Wood 2, 3 = Wood 1, 4 и выше = Bronze и дальше (полные правила).
+    /// убивает бота (PlayerInputException в рефери). Склейка для CodinGame — под Bronze и выше (Wood пройден);
+    /// 1 = Wood 3, 2 = Wood 2, 3 = Wood 1, 4 и выше = Bronze и дальше (полные правила). Локально: league=N.
     /// </summary>
     public static class Rules
     {
-        public const int DefaultLeague = 1;
+        public const int DefaultLeague = 4;
         public static int League = DefaultLeague;
 
         public static bool Mines { get { return League >= 3; } }
