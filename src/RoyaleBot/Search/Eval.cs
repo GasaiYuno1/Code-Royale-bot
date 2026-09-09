@@ -16,6 +16,7 @@ namespace Royale
         public int TowerNeed = 3;
         public double Exposure = 4;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
         public int SafeRadius = 250;
+        public double ExposureEta = 0.5;    // штраф Exposure только за ту часть пути до укрытия, которую королева не успеет пройти до подхода ближайшего рыцаря (доля ExposureEta от его пути; 0 — за всё расстояние; self-play 0.8 против 0: 58:40, 0.5 против 0.8: 55:44)
         public double MineFar = 0.4;        // шахта на расстоянии MineFarDist от дома стоит на эту долю меньше
         public int MineFarDist = 1200;
         public double EnemyTower = 0.5;     // HP чужой башни
@@ -42,6 +43,7 @@ namespace Royale
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
         public int MaxBarracks = 2;
         public double Cover = 300;          // королева под своей башней, когда есть угроза
+        public double EnemyRange = 300;     // королева в радиусе чужой башни на листе: башня бьёт её каждый ход и дальше горизонта (шахты под чужой башней стоили 13 HP)
         public double Lead = 5000;          // лидерство по HP к концу партии (исход по лимиту ходов решает разница HP): Lead × tanh(разница / LeadScale), нарастает за LeadTurns ходов до конца
         public int LeadScale = 5;
         public int LeadTurns = 60;
@@ -59,6 +61,7 @@ namespace Royale
                 case "towercalm": TowerNeededCalm = v; break;
                 case "exposure": Exposure = v; break;
                 case "safe": SafeRadius = (int)v; break;
+                case "expeta": ExposureEta = v; break;
                 case "minefar": MineFar = v; break;
                 case "etowerbase": EnemyTowerBase = v; break;
                 case "etower": EnemyTower = v; break;
@@ -75,6 +78,7 @@ namespace Royale
                 case "econshort": EconShort = v; break;
                 case "econtarget": EconTarget = (int)v; break;
                 case "lead": Lead = v; break;
+                case "erange": EnemyRange = v; break;
                 case "leadscale": LeadScale = (int)v; break;
                 case "leadturns": LeadTurns = (int)v; break;
                 case "readiness": Readiness = v; break;
@@ -123,7 +127,14 @@ namespace Royale
                 if (st.Structure == StructureType.Barracks && st.Owner != me && st.CreepType == 0) enemyKnightsComing = true;
             }
             bool enemyKnightsAlive = false;
-            for (int i = 0; i < s.CreepCount[e]; i++) if (s.Creeps[e][i].Type == 0) { enemyKnightsComing = true; enemyKnightsAlive = true; break; }
+            double knightD2 = double.MaxValue;
+            for (int i = 0; i < s.CreepCount[e]; i++)
+                if (s.Creeps[e][i].Type == 0)
+                {
+                    enemyKnightsComing = true; enemyKnightsAlive = true;
+                    double kd = SimState.D2(s.Creeps[e][i].X, s.Creeps[e][i].Y, qx, qy);
+                    if (kd < knightD2) knightD2 = kd;
+                }
             double safeD2 = SimState.D2(homeX, homeY, qx, qy);
             double enemyHomeX = Consts.WorldWidth - homeX, enemyHomeY = Consts.WorldHeight - homeY;
             double dFree = double.MaxValue, dGold = double.MaxValue;
@@ -151,7 +162,12 @@ namespace Royale
                             if (d2 < defR2) towerHpNear += st.Hp;
                             if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
                         }
-                        else { v -= (w.EnemyTowerBase + w.EnemyTower * st.Hp) * towerF; enemyTowers++; }
+                        else
+                        {
+                            v -= (w.EnemyTowerBase + w.EnemyTower * st.Hp) * towerF;
+                            enemyTowers++;
+                            if (w.EnemyRange > 0 && SimState.D2(st.X, st.Y, qx, qy) < (double)st.AttackRadius * st.AttackRadius) v -= w.EnemyRange;
+                        }
                         break;
                     case StructureType.Mine:
                     {
@@ -209,7 +225,10 @@ namespace Royale
             if (enemyKnightsAlive)
             {
                 double safeD = Math.Sqrt(safeD2);
-                if (safeD > w.SafeRadius) v -= w.Exposure * (safeD - w.SafeRadius) * (1 + Math.Max(0, 80 - myHp) / 40.0);
+                double late = safeD - w.SafeRadius;
+                // королева успевает в укрытие раньше рыцарей: её путь минус то, что она пройдёт, пока ближайший рыцарь идёт к ней
+                if (w.ExposureEta > 0) late -= Math.Sqrt(knightD2) * w.ExposureEta * Consts.QueenSpeed / CreepStats.Speed[0];
+                if (late > 0) v -= w.Exposure * late * (1 + Math.Max(0, 80 - myHp) / 40.0);
             }
 
             if (w.Noise > 0) v += (rnd.NextDouble() - 0.5) * w.Noise;

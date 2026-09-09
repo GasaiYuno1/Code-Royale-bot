@@ -70,6 +70,14 @@ namespace Royale
         /// Ввод второго даёт его золото и видимость его сайтов. Абсолютный индекс: первая королева в списке юнитов —
         /// королева игрока 0.
         /// </summary>
+        /// <summary>Доход чужой шахты, когда он не виден: максимум сайта (если видели), иначе UnknownMineRate; -1 = не предполагать (старое поведение, ключ emrate).</summary>
+        public static int UnknownMineRate = 2;
+        public static int AssumedMineRate(int knownMaxMineSize)
+        {
+            if (UnknownMineRate < 0) return -1;
+            return knownMaxMineSize > 0 ? knownMaxMineSize : UnknownMineRate;
+        }
+
         public static SimState FromInputs(TurnInput mine, TurnInput other, int turn)
         {
             return FromInputs(mine, other, turn, null);
@@ -107,6 +115,9 @@ namespace Royale
                 {
                     case StructureType.Mine:
                         site.Rate = Math.Max(a.Param1, b.Param1);
+                        // доход чужой шахты виден только рядом с моей королевой (-1): считаем, что противник качает шахту до
+                        // максимума сайта (если видели), иначе 2; с Rate = -1 противник в поиске терял золото и никогда не тренировал
+                        if (site.Rate < 0) site.Rate = AssumedMineRate(a.KnownMaxMineSize);
                         break;
                     case StructureType.Tower:
                         site.Hp = a.Param1; site.AttackRadius = a.Param2;

@@ -9,9 +9,12 @@ namespace Royale
     /// </summary>
     public sealed class Macro
     {
-        public int NearSites = 4;          // сколько ближайших сайтов предлагать под постройки
+        public int NearSites = 3;          // сколько ближайших свободных сайтов предлагать под постройки (4 давало 23 кандидата на ход против 16 и глубину 3 вместо 12 на четверти ходов с крипами)
+        public int NearOwn = 2;            // сколько ближайших своих сайтов предлагать под прокачку / замену
+        public int BarracksSites = 2;      // казармы предлагаются только на стольких ближайших свободных сайтах
         public int GiantWhenTowers = 2;    // от скольких чужих башен нужны гиганты
         public int GiantSaveTurns = 15;    // копить на гиганта только если хватит за столько ходов при текущем доходе
+        public int LowHpRush = 0;          // чужая королева не выше этого HP: не копим на гигантов и не фильтруем волну — добиваем рыцарями (ключ lowhp; 20 спасло партию с противником на 12 HP за 3 башнями, но против эталона 3:7 вместо 6:4 на тех же сидах — выключено)
         public int GiantMinLeft = 40;      // гигантов не тренируем и не копим на них, когда до конца партии меньше ходов (стройка 10 + ход 50/ход; исход решает HP, не башни)
         public int SecondBarracksIncome = 6;
         public int KnightZone = 250;       // не строить шахту, если чужой рыцарь ближе
@@ -45,7 +48,7 @@ namespace Royale
             // копим на гиганта: пока у врага >= GiantWhenTowers башен и есть своя казарма гигантов, рыцарей тренируем только сверх 140 —
             // но только если 140 достижимы за GiantSaveTurns ходов при текущем доходе (иначе при иссякших шахтах бот сидел на 120 золота до конца партии)
             bool saveForGiant = false;
-            if (enemyTowers >= GiantWhenTowers && gold < CreepStats.Cost[2])
+            if (enemyTowers >= GiantWhenTowers && gold < CreepStats.Cost[2] && s.Health[1 - me] > LowHpRush)
             {
                 int income = 0;
                 for (int i = 0; i < s.Sites.Length; i++)
@@ -71,6 +74,28 @@ namespace Royale
             if (buf == null) pool[n] = buf = new int[n];
             for (int i = 0; i < n; i++) buf[i] = _train[i];
             return buf;
+        }
+
+        /// <summary>Добавляет в _near до k ближайших к королеве сайтов: свободных (free) или своих (иначе), начиная с позиции from; возвращает новый размер.</summary>
+        private int Nearest(SimState s, int me, int from, int k, bool free)
+        {
+            int found = from, cap = Math.Min(from + k, _near.Length);
+            for (int i = 0; i < s.Sites.Length; i++)
+            {
+                SimSite st = s.Sites[i];
+                if (free ? st.Structure != StructureType.None : st.Owner != me) continue;
+                double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
+                int pos = found < cap ? found++ : -1;
+                if (pos < 0)
+                {
+                    int worst = from;
+                    for (int j = from + 1; j < cap; j++) if (_nearD[j] > _nearD[worst]) worst = j;
+                    if (d >= _nearD[worst]) continue;
+                    pos = worst;
+                }
+                _near[pos] = i; _nearD[pos] = d;
+            }
+            return found;
         }
 
         /// <summary>Кандидаты действий королевы: WAIT, 8 направлений, постройки на ближайших сайтах. Возвращает число.</summary>
@@ -106,23 +131,11 @@ namespace Royale
                 || (income >= TargetIncome && myTowers < MaxTowersCalm)
                 || (enemyKnightBarracks && myTowers < TowersEarly);
 
-            int k = Math.Min(NearSites, _near.Length);
-            int found = 0;
-            for (int i = 0; i < s.Sites.Length; i++)
-            {
-                SimSite st = s.Sites[i];
-                if (st.Structure == StructureType.Tower && st.Owner != me) continue;
-                double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
-                int pos = found < k ? found++ : -1;
-                if (pos < 0)
-                {
-                    int worst = 0;
-                    for (int j = 1; j < k; j++) if (_nearD[j] > _nearD[worst]) worst = j;
-                    if (d >= _nearD[worst]) continue;
-                    pos = worst;
-                }
-                _near[pos] = i; _nearD[pos] = d;
-            }
+            // ближайшие свободные сайты (на чужие постройки строить нельзя — предупреждение рефери) и ближайшие свои
+            // (прокачка шахты/башни, шахта -> башня при угрозе); раньше брались 4 ближайших любых сайта, и когда все они
+            // были нашими, строить было нечего — бот уходил бродить
+            int found = Nearest(s, me, 0, NearSites, true);
+            found = Nearest(s, me, found, NearOwn, false);
             // ближайшие свободные сайты с золотом, даже далёкие: цель для похода за экономикой
             if (Rules.Mines)
             {
@@ -149,17 +162,17 @@ namespace Royale
             for (int j = 0; j < found && n < buf.Length - 5; j++)
             {
                 SimSite st = s.Sites[_near[j]];
-                bool takeable = st.Structure == StructureType.None || st.Owner != me;
-                if (takeable)
+                if (st.Structure == StructureType.None)
                 {
                     if (Rules.Mines && st.Gold != 0 && !EnemyKnightNear(s, me, st.X, st.Y)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
                     if (Rules.Towers && towersAllowed) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
-                    if (knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
-                    if (Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
+                    if (j < BarracksSites && knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
+                    if (j < BarracksSites && Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
                 }
                 else if (st.Structure == StructureType.Mine)
                 {
                     if (st.MaxMineSize < 0 || st.Rate < st.MaxMineSize) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
+                    if (Rules.Towers && knightsAlive) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);   // шахта -> башня под ударом
                 }
                 else if (st.Structure == StructureType.Tower)
                 {

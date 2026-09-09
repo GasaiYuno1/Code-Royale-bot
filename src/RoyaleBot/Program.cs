@@ -65,7 +65,11 @@ namespace Royale
                     case "sites": s.Macro.NearSites = iv; break;
                     case "giants": s.Macro.GiantWhenTowers = iv; break;
                     case "giantleft": s.Macro.GiantMinLeft = iv; break;
+                    case "nearown": s.Macro.NearOwn = iv; break;
+                    case "barsites": s.Macro.BarracksSites = iv; break;
+                    case "emrate": SimState.UnknownMineRate = iv; break;
                     case "giantsave": s.Macro.GiantSaveTurns = iv; break;
+                    case "lowhp": s.Macro.LowHpRush = iv; break;
                     case "bar2": s.Macro.SecondBarracksIncome = iv; break;
                     case "maxtowers": s.Macro.MaxTowersCalm = iv; break;
                     case "econ": s.Macro.TargetIncome = iv; break;

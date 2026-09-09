@@ -39,7 +39,7 @@ namespace Royale
 
         private readonly Random _rnd = new Random(12345);
         private readonly SimState _scratch = new SimState();
-        private readonly QueenAction[] _cand = new QueenAction[32];
+        private readonly QueenAction[] _cand = new QueenAction[48];
         private Node[] _beam, _bankA, _bankB;
         private int[] _order;
         private double[] _keys;
@@ -79,7 +79,7 @@ namespace Royale
             // TRAIN считается по корню после поиска: Macro.Train отдаёт общий буфер, который поиск перезаписывает
             // состояниями будущих ходов (была команда TRAIN занятой казарме / без золота = предупреждение и потерянный ход)
             int[] train = (int[])Macro.Train(root, me).Clone();
-            if (MinWaveDamage > 0 && train.Length > 0) train = FilterWave(root, me, train);
+            if (MinWaveDamage > 0 && train.Length > 0 && root.Health[1 - me] > Macro.LowHpRush) train = FilterWave(root, me, train);
             return new TurnOutput { Queen = best, Train = train };
         }
 
@@ -119,7 +119,7 @@ namespace Royale
         }
 
         /// <summary>
-        /// Оценка золота противника: старт 100, плюс доход его шахт (невидимый доход считаем 1),
+        /// Оценка золота противника: старт 100, плюс доход его шахт (невидимый доход — максимум сайта или 2),
         /// минус стоимость тренировок, которые он начал (казарма перешла из простоя в тренировку).
         /// </summary>
         private void UpdateEnemyGold(TurnInput t)
@@ -133,7 +133,7 @@ namespace Royale
             for (int i = 0; i < t.Sites.Length; i++)
             {
                 Site st = t.Sites[i];
-                if (st.IsEnemy && st.Structure == StructureType.Mine) income += st.Param1 > 0 ? st.Param1 : 1;
+                if (st.IsEnemy && st.Structure == StructureType.Mine) income += st.Param1 > 0 ? st.Param1 : Math.Max(1, SimState.AssumedMineRate(st.KnownMaxMineSize));
                 int busy = st.IsEnemy && st.Structure == StructureType.Barracks ? st.Param1 : 0;
                 if (busy > 0 && _enemyBarracksBusy[i] == 0 && st.Param2 >= 0 && st.Param2 < 3) _enemyGold -= CreepStats.Cost[st.Param2];
                 _enemyBarracksBusy[i] = busy;
