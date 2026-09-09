@@ -29,7 +29,7 @@ namespace Royale
         public double Gold = 4;             // золото в кармане (не больше GoldCap; без казармы ×0.2)
         public int GoldCap = 300;
         public double Knight = 5;           // HP моего рыцаря (× близость к чужой королеве)
-        public double EnemyKnight = 20;     // HP чужого рыцаря
+        public double EnemyKnight = 15;     // HP чужого рыцаря (тюнер 4 под физику арены, рыцарь 25 HP: 20 -> 15)
         public int KnightReach = 1200;      // дальше этого рыцарь стоит только FarKnight от полного веса (для своих рыцарей — близость к чужой королеве)
         public double FarKnight = 1.0;      // 1 = штраф не зависит от расстояния
         public double Giant = 2;            // HP моего гиганта
