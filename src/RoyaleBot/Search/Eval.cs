@@ -8,6 +8,8 @@ namespace Royale
     {
         public double Hp = 100;             // моё HP
         public double EnemyHp = 50;         // HP противника
+        public double LowHp = 5;            // квадратичный штраф ниже LowHpLevel: LowHp × (LowHpLevel − HP)² — при старте с 25 HP одна волна = половина жизни, линейная цена HP этого не видит
+        public int LowHpLevel = 40;
         public double Dead = 1e6;           // смерть королевы
         public double Tower = 0.25;         // HP моей башни (прокачка +96/ход не должна перевешивать поход к сайту)
         public double TowerBase = 400;      // сама башня (существует, с убыванием к концу)
@@ -16,6 +18,7 @@ namespace Royale
         public int TowerNeed = 3;
         public double Exposure = 4;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
         public int SafeRadius = 250;
+        public int SafeTowerHp = 100;       // башня считается укрытием (для Exposure) только от этого HP (ключ safehp)
         public double ExposureEta = 0.5;    // штраф Exposure только за ту часть пути до укрытия, которую королева не успеет пройти до подхода ближайшего рыцаря (доля ExposureEta от его пути; 0 — за всё расстояние; self-play 0.8 против 0: 58:40, 0.5 против 0.8: 55:44)
         public double MineFar = 0.4;        // шахта на расстоянии MineFarDist от дома стоит на эту долю меньше
         public int MineFarDist = 1200;
@@ -55,12 +58,15 @@ namespace Royale
             {
                 case "hp": Hp = v; break;
                 case "ehp": EnemyHp = v; break;
+                case "lowhpw": LowHp = v; break;
+                case "lowhplevel": LowHpLevel = (int)v; break;
                 case "tower": Tower = v; break;
                 case "towerbase": TowerBase = v; break;
                 case "towerneed": TowerNeeded = v; break;
                 case "towercalm": TowerNeededCalm = v; break;
                 case "exposure": Exposure = v; break;
                 case "safe": SafeRadius = (int)v; break;
+                case "safehp": SafeTowerHp = (int)v; break;
                 case "expeta": ExposureEta = v; break;
                 case "minefar": MineFar = v; break;
                 case "etowerbase": EnemyTowerBase = v; break;
@@ -107,6 +113,7 @@ namespace Royale
             if (myHp <= 0) return -w.Dead + s.Turn * 10;
             double v = w.Hp * myHp - w.EnemyHp * enHp;
             if (enHp <= 0) v += w.Dead * 0.1;
+            if (myHp < w.LowHpLevel) v -= w.LowHp * (w.LowHpLevel - myHp) * (w.LowHpLevel - myHp);
             // ценность башен убывает к концу партии; шахта оценивается будущей добычей до конца партии
             int left = Consts.MaxTurns - s.Turn;
             if (left < 1) left = 1;
@@ -160,7 +167,7 @@ namespace Royale
                             double d2 = SimState.D2(st.X, st.Y, qx, qy);
                             if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
                             if (d2 < defR2) towerHpNear += st.Hp;
-                            if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
+                            if (st.Hp >= w.SafeTowerHp && d2 < safeD2) safeD2 = d2;
                         }
                         else
                         {

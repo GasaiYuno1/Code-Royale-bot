@@ -519,6 +519,8 @@ public sealed class EvalWeights
 {
 public double Hp = 100;
 public double EnemyHp = 50;
+public double LowHp = 5;
+public int LowHpLevel = 40;
 public double Dead = 1e6;
 public double Tower = 0.25;
 public double TowerBase = 400;
@@ -527,6 +529,7 @@ public double TowerNeededCalm = 500;
 public int TowerNeed = 3;
 public double Exposure = 4;
 public int SafeRadius = 250;
+public int SafeTowerHp = 100;
 public double ExposureEta = 0.5;
 public double MineFar = 0.4;
 public int MineFarDist = 1200;
@@ -565,12 +568,15 @@ switch (key)
 {
 case "hp": Hp = v; break;
 case "ehp": EnemyHp = v; break;
+case "lowhpw": LowHp = v; break;
+case "lowhplevel": LowHpLevel = (int)v; break;
 case "tower": Tower = v; break;
 case "towerbase": TowerBase = v; break;
 case "towerneed": TowerNeeded = v; break;
 case "towercalm": TowerNeededCalm = v; break;
 case "exposure": Exposure = v; break;
 case "safe": SafeRadius = (int)v; break;
+case "safehp": SafeTowerHp = (int)v; break;
 case "expeta": ExposureEta = v; break;
 case "minefar": MineFar = v; break;
 case "etowerbase": EnemyTowerBase = v; break;
@@ -615,6 +621,7 @@ int myHp = s.Health[me], enHp = s.Health[e];
 if (myHp <= 0) return -w.Dead + s.Turn * 10;
 double v = w.Hp * myHp - w.EnemyHp * enHp;
 if (enHp <= 0) v += w.Dead * 0.1;
+if (myHp < w.LowHpLevel) v -= w.LowHp * (w.LowHpLevel - myHp) * (w.LowHpLevel - myHp);
 int left = Consts.MaxTurns - s.Turn;
 if (left < 1) left = 1;
 if (s.GameOver && s.Winner >= 0) v += s.Winner == me ? w.Dead * 0.1 : -w.Dead * 0.1;
@@ -665,7 +672,7 @@ v += (baseV + w.Tower * st.Hp) * towerF;
 double d2 = SimState.D2(st.X, st.Y, qx, qy);
 if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
 if (d2 < defR2) towerHpNear += st.Hp;
-if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
+if (st.Hp >= w.SafeTowerHp && d2 < safeD2) safeD2 = d2;
 }
 else
 {
@@ -925,7 +932,7 @@ public sealed class SearchStrategy : IStrategy
 public int Depth = 12;
 public int Width = 16;
 public int FineDepth = 4;
-public int MaxMs = 18;
+public int MaxMs = 15;
 public int RolloutTurns = 8;
 public int RolloutLeaves = 6;
 public double RolloutWeight = 0.7;
