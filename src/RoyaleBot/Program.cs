@@ -58,10 +58,14 @@ namespace Royale
                     case "leaves": s.RolloutLeaves = iv; break;
                     case "fine": s.FineDepth = iv; break;
                     case "persist": s.Persist = v; break;
+                    case "wave": s.MinWaveDamage = iv; break;
+                    case "waveturns": s.WaveTurns = iv; break;
                     case "debug": s.Debug = iv != 0; break;
                     case "rolloutw": s.RolloutWeight = v; break;
                     case "sites": s.Macro.NearSites = iv; break;
                     case "giants": s.Macro.GiantWhenTowers = iv; break;
+                    case "giantleft": s.Macro.GiantMinLeft = iv; break;
+                    case "giantsave": s.Macro.GiantSaveTurns = iv; break;
                     case "bar2": s.Macro.SecondBarracksIncome = iv; break;
                     case "maxtowers": s.Macro.MaxTowersCalm = iv; break;
                     case "econ": s.Macro.TargetIncome = iv; break;

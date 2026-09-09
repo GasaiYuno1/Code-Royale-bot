@@ -155,7 +155,7 @@ namespace Royale
             Winner = Killed[1 - p] ? -1 : 1 - p;
         }
 
-        private int SiteIndex(int id)
+        public int SiteIndex(int id)
         {
             if (id >= 0 && id < Sites.Length && Sites[id].Id == id) return id;
             for (int i = 0; i < Sites.Length; i++) if (Sites[i].Id == id) return i;

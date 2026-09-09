@@ -11,6 +11,8 @@ namespace Royale
     {
         public int NearSites = 4;          // сколько ближайших сайтов предлагать под постройки
         public int GiantWhenTowers = 2;    // от скольких чужих башен нужны гиганты
+        public int GiantSaveTurns = 15;    // копить на гиганта только если хватит за столько ходов при текущем доходе
+        public int GiantMinLeft = 40;      // гигантов не тренируем и не копим на них, когда до конца партии меньше ходов (стройка 10 + ход 50/ход; исход решает HP, не башни)
         public int SecondBarracksIncome = 6;
         public int KnightZone = 250;       // не строить шахту, если чужой рыцарь ближе
         public int MaxTowersCalm = 3;      // без живых чужих рыцарей новые башни сверх этого не предлагаются
@@ -31,22 +33,30 @@ namespace Royale
             _train.Clear();
             int gold = s.Gold[me];
             int enemyTowers = 0;
-            for (int i = 0; i < s.Sites.Length; i++)
-                if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
+            if (Consts.MaxTurns - s.Turn >= GiantMinLeft)
+                for (int i = 0; i < s.Sites.Length; i++)
+                    if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
                 if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 2) continue;
                 if (enemyTowers >= GiantWhenTowers && gold >= CreepStats.Cost[2]) { _train.Add(st.Id); gold -= CreepStats.Cost[2]; }
             }
-            // копим на гиганта: пока у врага >= GiantWhenTowers башен и есть своя казарма гигантов, рыцарей тренируем только сверх 140
+            // копим на гиганта: пока у врага >= GiantWhenTowers башен и есть своя казарма гигантов, рыцарей тренируем только сверх 140 —
+            // но только если 140 достижимы за GiantSaveTurns ходов при текущем доходе (иначе при иссякших шахтах бот сидел на 120 золота до конца партии)
             bool saveForGiant = false;
-            if (enemyTowers >= GiantWhenTowers)
+            if (enemyTowers >= GiantWhenTowers && gold < CreepStats.Cost[2])
+            {
+                int income = 0;
                 for (int i = 0; i < s.Sites.Length; i++)
-                {
-                    SimSite st = s.Sites[i];
-                    if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2 && gold < CreepStats.Cost[2]) saveForGiant = true;
-                }
+                    if (s.Sites[i].Structure == StructureType.Mine && s.Sites[i].Owner == me) income += s.Sites[i].Rate;
+                if (gold + income * GiantSaveTurns >= CreepStats.Cost[2])
+                    for (int i = 0; i < s.Sites.Length; i++)
+                    {
+                        SimSite st = s.Sites[i];
+                        if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2) saveForGiant = true;
+                    }
+            }
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];

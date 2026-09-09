@@ -14,7 +14,7 @@ namespace Royale
         public double TowerNeeded = 800;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
         public double TowerNeededCalm = 500; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
-        public double Exposure = 1;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе
+        public double Exposure = 4;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
         public int SafeRadius = 250;
         public double MineFar = 0.4;        // шахта на расстоянии MineFarDist от дома стоит на эту долю меньше
         public int MineFarDist = 1200;
@@ -34,7 +34,7 @@ namespace Royale
         public double EconShort = 400;      // за единицу недобора дохода до EconTarget, половина снимается по мере подхода к свободному сайту с золотом на своей половине
         public int EconTarget = 6;
         public int ShapingDist = 1200;
-        public double Readiness = 1.5;      // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed)
+        public double Readiness = 3;        // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed; тюнер 3b: 1.5 -> 3)
         public int DefenseNeed = 600;
         public int DefenseRadius = 450;
         public double GiantBarracks = 1500; // есть казарма гигантов, когда у врага >= GiantWhenTowers башен
@@ -42,6 +42,9 @@ namespace Royale
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
         public int MaxBarracks = 2;
         public double Cover = 300;          // королева под своей башней, когда есть угроза
+        public double Lead = 5000;          // лидерство по HP к концу партии (исход по лимиту ходов решает разница HP): Lead × tanh(разница / LeadScale), нарастает за LeadTurns ходов до конца
+        public int LeadScale = 5;
+        public int LeadTurns = 60;
         public double Noise = 1;            // случайный разброс для разнообразия равных вариантов
 
         public bool Set(string key, double v)
@@ -71,6 +74,9 @@ namespace Royale
                 case "nobar": NoBarracks = v; break;
                 case "econshort": EconShort = v; break;
                 case "econtarget": EconTarget = (int)v; break;
+                case "lead": Lead = v; break;
+                case "leadscale": LeadScale = (int)v; break;
+                case "leadturns": LeadTurns = (int)v; break;
                 case "readiness": Readiness = v; break;
                 case "defneed": DefenseNeed = (int)v; break;
                 case "defradius": DefenseRadius = (int)v; break;
@@ -100,6 +106,10 @@ namespace Royale
             // ценность башен убывает к концу партии; шахта оценивается будущей добычей до конца партии
             int left = Consts.MaxTurns - s.Turn;
             if (left < 1) left = 1;
+            // исход по лимиту ходов: побеждает большее HP — к концу партии знак разницы важнее всего остального
+            if (s.GameOver && s.Winner >= 0) v += s.Winner == me ? w.Dead * 0.1 : -w.Dead * 0.1;
+            if (left < w.LeadTurns && w.Lead > 0)
+                v += w.Lead * (1 - (double)left / w.LeadTurns) * Math.Tanh((myHp - enHp) / (double)w.LeadScale);
             double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
 
             int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0, myTowers = 0;
@@ -172,7 +182,7 @@ namespace Royale
             int shortfall = w.EconTarget - income;
             if (shortfall > 0 && dGold != double.MaxValue)
                 v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
-            if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
+            if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers && left >= 40) v += w.GiantBarracks;   // в конце партии гиганты не нужны (см. Macro.GiantMinLeft)
             if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
             double gold = Math.Min(s.Gold[me], w.GoldCap);
             v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);

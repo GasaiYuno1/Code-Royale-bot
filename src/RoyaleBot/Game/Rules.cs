@@ -47,7 +47,7 @@ namespace Royale
         public const int ArcherDamage = 2;
         public const int ArcherDamageToGiants = 10;
         public const int WoodFixedIncome = 10;
-        public const int MaxTurns = 200;
+        public const int MaxTurns = 250;         // на арене 250 ходов (501 кадр реплея); в исходниках рефери на GitHub — 200
         public const int ObstacleGap = 90;
     }
 

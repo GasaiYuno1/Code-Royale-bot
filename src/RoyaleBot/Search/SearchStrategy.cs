@@ -21,6 +21,9 @@ namespace Royale
         public double RolloutWeight = 0.7;  // доля оценки после продолжения в итоговой оценке листа
         public bool Debug;              // печатать кандидатов корня с оценками (ключ debug=1)
         public double Persist = 150;    // премия цепочке, начинающейся с прошлого действия (против метаний между планами)
+        public int MinWaveDamage = 1;   // рыцарей тренируем, только если волна (все свободные казармы) в симуляции с неподвижными королевами снимает с чужой королевы не меньше HP (0 — не проверять)
+        public int WaveTurns = 40;      // горизонт этой симуляции
+        public int LastWaveDamage = -1;  // урон чужой королеве в последней проверке волны (для отладки)
         private QueenAction _lastAction;
         private bool _hasLast;
         public int FirstTurnMs = 300;   // на первом ходу (лимит 1000 мс, JIT)
@@ -72,10 +75,47 @@ namespace Royale
             long deadline = Math.Min(clock.BudgetMs - 2, _turn == 0 ? FirstTurnMs : MaxMs);
             _turn++;
 
-            var o = new TurnOutput { Queen = QueenAction.Wait(), Train = Macro.Train(root, me) };
             QueenAction best = Search(root, me, clock, deadline);
-            o.Queen = best;
-            return o;
+            // TRAIN считается по корню после поиска: Macro.Train отдаёт общий буфер, который поиск перезаписывает
+            // состояниями будущих ходов (была команда TRAIN занятой казарме / без золота = предупреждение и потерянный ход)
+            int[] train = (int[])Macro.Train(root, me).Clone();
+            if (MinWaveDamage > 0 && train.Length > 0) train = FilterWave(root, me, train);
+            return new TurnOutput { Queen = best, Train = train };
+        }
+
+        /// <summary>
+        /// Волна рыцарей, которая целиком гибнет о башни, — выброшенное золото (4 рыцаря против черепахи).
+        /// Симулируем тренировку и WaveTurns ходов с неподвижными королевами без новых тренировок; если чужая королева
+        /// теряет меньше MinWaveDamage HP, рыцарей из списка убираем (гигантов оставляем).
+        /// </summary>
+        private int[] FilterWave(SimState root, int me, int[] train)
+        {
+            int knights = 0;
+            for (int i = 0; i < train.Length; i++)
+            {
+                SimSite st = root.Sites[root.SiteIndex(train[i])];
+                if (st.CreepType == 0) knights++;
+            }
+            if (knights == 0) return train;
+            int e = 1 - me;
+            _scratch.CopyFrom(root);
+            var mine = new SimAction { Queen = QueenAction.Wait(), Train = train, BuildTypeValid = true };
+            SimAction enemy = SimAction.Wait();
+            if (me == 0) _scratch.Step(mine, enemy); else _scratch.Step(enemy, mine);
+            SimAction none = SimAction.Wait();
+            for (int t = 1; t < WaveTurns && !_scratch.GameOver; t++)
+            {
+                _scratch.Step(none, none);
+                if (t > CreepStats.BuildTime[0] && _scratch.CreepCount[me] == 0) break;
+            }
+            int damage = root.Health[e] - _scratch.Health[e];
+            LastWaveDamage = damage;
+            if (damage >= MinWaveDamage) return train;
+            if (knights == train.Length) return SimAction.NoTrain;
+            var keep = new int[train.Length - knights];
+            int n = 0;
+            for (int i = 0; i < train.Length; i++) if (root.Sites[root.SiteIndex(train[i])].CreepType != 0) keep[n++] = train[i];
+            return keep;
         }
 
         /// <summary>

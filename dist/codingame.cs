@@ -295,7 +295,7 @@ public const int KnightDamage = 1;
 public const int ArcherDamage = 2;
 public const int ArcherDamageToGiants = 10;
 public const int WoodFixedIncome = 10;
-public const int MaxTurns = 200;
+public const int MaxTurns = 250;
 public const int ObstacleGap = 90;
 }
 public enum UnitType { Queen = -1, Knight = 0, Archer = 1, Giant = 2 }
@@ -485,10 +485,14 @@ case "rollout": s.RolloutTurns = iv; break;
 case "leaves": s.RolloutLeaves = iv; break;
 case "fine": s.FineDepth = iv; break;
 case "persist": s.Persist = v; break;
+case "wave": s.MinWaveDamage = iv; break;
+case "waveturns": s.WaveTurns = iv; break;
 case "debug": s.Debug = iv != 0; break;
 case "rolloutw": s.RolloutWeight = v; break;
 case "sites": s.Macro.NearSites = iv; break;
 case "giants": s.Macro.GiantWhenTowers = iv; break;
+case "giantleft": s.Macro.GiantMinLeft = iv; break;
+case "giantsave": s.Macro.GiantSaveTurns = iv; break;
 case "bar2": s.Macro.SecondBarracksIncome = iv; break;
 case "maxtowers": s.Macro.MaxTowersCalm = iv; break;
 case "econ": s.Macro.TargetIncome = iv; break;
@@ -517,7 +521,7 @@ public double TowerBase = 400;
 public double TowerNeeded = 800;
 public double TowerNeededCalm = 500;
 public int TowerNeed = 3;
-public double Exposure = 1;
+public double Exposure = 4;
 public int SafeRadius = 250;
 public double MineFar = 0.4;
 public int MineFarDist = 1200;
@@ -537,7 +541,7 @@ public double NoBarracks = 5000;
 public double EconShort = 400;
 public int EconTarget = 6;
 public int ShapingDist = 1200;
-public double Readiness = 1.5;
+public double Readiness = 3;
 public int DefenseNeed = 600;
 public int DefenseRadius = 450;
 public double GiantBarracks = 1500;
@@ -545,6 +549,9 @@ public int GiantWhenTowers = 2;
 public double ExtraBarracks = 500;
 public int MaxBarracks = 2;
 public double Cover = 300;
+public double Lead = 5000;
+public int LeadScale = 5;
+public int LeadTurns = 60;
 public double Noise = 1;
 public bool Set(string key, double v)
 {
@@ -573,6 +580,9 @@ case "egiant": EnemyGiant = v; break;
 case "nobar": NoBarracks = v; break;
 case "econshort": EconShort = v; break;
 case "econtarget": EconTarget = (int)v; break;
+case "lead": Lead = v; break;
+case "leadscale": LeadScale = (int)v; break;
+case "leadturns": LeadTurns = (int)v; break;
 case "readiness": Readiness = v; break;
 case "defneed": DefenseNeed = (int)v; break;
 case "defradius": DefenseRadius = (int)v; break;
@@ -599,6 +609,9 @@ double v = w.Hp * myHp - w.EnemyHp * enHp;
 if (enHp <= 0) v += w.Dead * 0.1;
 int left = Consts.MaxTurns - s.Turn;
 if (left < 1) left = 1;
+if (s.GameOver && s.Winner >= 0) v += s.Winner == me ? w.Dead * 0.1 : -w.Dead * 0.1;
+if (left < w.LeadTurns && w.Lead > 0)
+v += w.Lead * (1 - (double)left / w.LeadTurns) * Math.Tanh((myHp - enHp) / (double)w.LeadScale);
 double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
 int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0, myTowers = 0;
 bool enemyKnightsComing = false;
@@ -670,7 +683,7 @@ v -= w.NoBarracks * (dFree == double.MaxValue ? 1.0 : 0.5 + 0.5 * Math.Min(1.0, 
 int shortfall = w.EconTarget - income;
 if (shortfall > 0 && dGold != double.MaxValue)
 v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
-if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
+if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers && left >= 40) v += w.GiantBarracks;
 if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
 double gold = Math.Min(s.Gold[me], w.GoldCap);
 v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);
@@ -717,6 +730,8 @@ public sealed class Macro
 {
 public int NearSites = 4;
 public int GiantWhenTowers = 2;
+public int GiantSaveTurns = 15;
+public int GiantMinLeft = 40;
 public int SecondBarracksIncome = 6;
 public int KnightZone = 250;
 public int MaxTowersCalm = 3;
@@ -733,6 +748,7 @@ public int[] Train(SimState s, int me)
 _train.Clear();
 int gold = s.Gold[me];
 int enemyTowers = 0;
+if (Consts.MaxTurns - s.Turn >= GiantMinLeft)
 for (int i = 0; i < s.Sites.Length; i++)
 if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
 for (int i = 0; i < s.Sites.Length; i++)
@@ -742,11 +758,17 @@ if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || s
 if (enemyTowers >= GiantWhenTowers && gold >= CreepStats.Cost[2]) { _train.Add(st.Id); gold -= CreepStats.Cost[2]; }
 }
 bool saveForGiant = false;
-if (enemyTowers >= GiantWhenTowers)
+if (enemyTowers >= GiantWhenTowers && gold < CreepStats.Cost[2])
+{
+int income = 0;
+for (int i = 0; i < s.Sites.Length; i++)
+if (s.Sites[i].Structure == StructureType.Mine && s.Sites[i].Owner == me) income += s.Sites[i].Rate;
+if (gold + income * GiantSaveTurns >= CreepStats.Cost[2])
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
-if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2 && gold < CreepStats.Cost[2]) saveForGiant = true;
+if (st.Structure == StructureType.Barracks && st.Owner == me && st.CreepType == 2) saveForGiant = true;
+}
 }
 for (int i = 0; i < s.Sites.Length; i++)
 {
@@ -879,6 +901,9 @@ public int RolloutLeaves = 6;
 public double RolloutWeight = 0.7;
 public bool Debug;
 public double Persist = 150;
+public int MinWaveDamage = 1;
+public int WaveTurns = 40;
+public int LastWaveDamage = -1;
 private QueenAction _lastAction;
 private bool _hasLast;
 public int FirstTurnMs = 300;
@@ -923,10 +948,39 @@ UpdateEnemyGold(t);
 root.Gold[1 - me] = _enemyGold;
 long deadline = Math.Min(clock.BudgetMs - 2, _turn == 0 ? FirstTurnMs : MaxMs);
 _turn++;
-var o = new TurnOutput { Queen = QueenAction.Wait(), Train = Macro.Train(root, me) };
 QueenAction best = Search(root, me, clock, deadline);
-o.Queen = best;
-return o;
+int[] train = (int[])Macro.Train(root, me).Clone();
+if (MinWaveDamage > 0 && train.Length > 0) train = FilterWave(root, me, train);
+return new TurnOutput { Queen = best, Train = train };
+}
+private int[] FilterWave(SimState root, int me, int[] train)
+{
+int knights = 0;
+for (int i = 0; i < train.Length; i++)
+{
+SimSite st = root.Sites[root.SiteIndex(train[i])];
+if (st.CreepType == 0) knights++;
+}
+if (knights == 0) return train;
+int e = 1 - me;
+_scratch.CopyFrom(root);
+var mine = new SimAction { Queen = QueenAction.Wait(), Train = train, BuildTypeValid = true };
+SimAction enemy = SimAction.Wait();
+if (me == 0) _scratch.Step(mine, enemy); else _scratch.Step(enemy, mine);
+SimAction none = SimAction.Wait();
+for (int t = 1; t < WaveTurns && !_scratch.GameOver; t++)
+{
+_scratch.Step(none, none);
+if (t > CreepStats.BuildTime[0] && _scratch.CreepCount[me] == 0) break;
+}
+int damage = root.Health[e] - _scratch.Health[e];
+LastWaveDamage = damage;
+if (damage >= MinWaveDamage) return train;
+if (knights == train.Length) return SimAction.NoTrain;
+var keep = new int[train.Length - knights];
+int n = 0;
+for (int i = 0; i < train.Length; i++) if (root.Sites[root.SiteIndex(train[i])].CreepType != 0) keep[n++] = train[i];
+return keep;
 }
 private void UpdateEnemyGold(TurnInput t)
 {
@@ -1552,7 +1606,7 @@ Killed[p] = true;
 GameOver = true;
 Winner = Killed[1 - p] ? -1 : 1 - p;
 }
-private int SiteIndex(int id)
+public int SiteIndex(int id)
 {
 if (id >= 0 && id < Sites.Length && Sites[id].Id == id) return id;
 for (int i = 0; i < Sites.Length; i++) if (Sites[i].Id == id) return i;

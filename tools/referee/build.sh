@@ -13,8 +13,9 @@ if [ ! -d "$REF" ]; then
   git clone -q --depth 1 https://github.com/csj/code-royale "$REF"
   sed -i 's|<kotlin.version>1.2.10</kotlin.version>|<kotlin.version>1.9.24</kotlin.version>|; s|kotlin-stdlib-jre8|kotlin-stdlib-jdk8|; /<experimentalCoroutines>/d' "$REF/pom.xml"
   grep -rl 'minBy\|maxBy' "$REF/src" | xargs sed -i 's/\.minBy {/.minByOrNull {/g; s/\.maxBy {/.maxByOrNull {/g'
-  # лимит хода из -Dturn.max.time (локальные матчи; по умолчанию 50 мс, как на CodinGame)
-  sed -i 's|    theGameManager.maxTurns = 200|    theGameManager.maxTurns = 200\n    System.getProperty("turn.max.time")?.let { theGameManager.turnMaxTime = it.toInt() }|' "$REF/src/main/kotlin/com/codingame/game/Referee.kt"
+  # лимит хода из -Dturn.max.time (локальные матчи; по умолчанию 50 мс, как на CodinGame);
+  # число ходов из -Dturn.max (по умолчанию 250 — столько играет арена, в исходниках на GitHub 200)
+  sed -i 's|    theGameManager.maxTurns = 200|    theGameManager.maxTurns = (System.getProperty("turn.max") ?: "250").toInt()\n    System.getProperty("turn.max.time")?.let { theGameManager.turnMaxTime = it.toInt() }|' "$REF/src/main/kotlin/com/codingame/game/Referee.kt"
 fi
 
 (cd "$REF" && mvn -q -B -DskipTests package && mvn -q -B dependency:build-classpath -Dmdep.outputFile="$BUILD/cp.txt")
