@@ -13,6 +13,7 @@ public sealed class Bot
 private readonly IStrategy _strategy;
 private readonly TextWriter _log;
 private readonly SiteMemory _memory = new SiteMemory();
+private long _lastEnd, _sinceLastMs;
 public Bot(IStrategy strategy, TextWriter log)
 {
 _strategy = strategy;
@@ -36,10 +37,13 @@ while (true)
 string line = input.ReadLine();
 if (line == null) return;
 if (turn > 0) clock = new TurnClock(TimeLimits.TurnMs - TimeLimits.SafetyMarginMs);
+_sinceLastMs = _lastEnd == 0 ? 0 : (System.Diagnostics.Stopwatch.GetTimestamp() - _lastEnd) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 TurnOutput answer;
+long readMs = 0;
 try
 {
 TurnInput t = InputParser.ReadTurn(line, input, sites);
+readMs = clock.ElapsedMs;
 _memory.Apply(t);
 if (turn == 0)
 {
@@ -55,10 +59,12 @@ _log.WriteLine("Turn error: " + e.Message);
 answer = TurnOutput.Idle;
 }
 string q = answer.Queen.Format(), tr = answer.TrainLine();
+long thinkMs = clock.ElapsedMs;
 output.WriteLine(q);
 output.WriteLine(tr);
 output.Flush();
-_log.WriteLine("turn " + turn + " in " + clock.ElapsedMs + " ms: " + q + " | " + tr);
+_log.WriteLine("turn " + turn + " in " + clock.ElapsedMs + " ms (read " + readMs + ", think " + thinkMs + ", gap " + _sinceLastMs + "): " + q + " | " + tr);
+_lastEnd = System.Diagnostics.Stopwatch.GetTimestamp();
 turn++;
 }
 }
@@ -478,11 +484,17 @@ case "firstms": s.FirstTurnMs = iv; break;
 case "rollout": s.RolloutTurns = iv; break;
 case "leaves": s.RolloutLeaves = iv; break;
 case "fine": s.FineDepth = iv; break;
+case "persist": s.Persist = v; break;
 case "debug": s.Debug = iv != 0; break;
 case "rolloutw": s.RolloutWeight = v; break;
 case "sites": s.Macro.NearSites = iv; break;
 case "giants": s.Macro.GiantWhenTowers = iv; break;
 case "bar2": s.Macro.SecondBarracksIncome = iv; break;
+case "maxtowers": s.Macro.MaxTowersCalm = iv; break;
+case "econ": s.Macro.TargetIncome = iv; break;
+case "early": s.Macro.TowersEarly = iv; break;
+case "upcalm": s.Macro.UpgradeCalmBelow = iv; break;
+case "farmines": s.Macro.FarMineSites = iv; break;
 default:
 if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
 break;
@@ -500,9 +512,9 @@ public sealed class EvalWeights
 public double Hp = 100;
 public double EnemyHp = 50;
 public double Dead = 1e6;
-public double Tower = 1.0;
+public double Tower = 0.25;
 public double TowerBase = 400;
-public double TowerNeeded = 1200;
+public double TowerNeeded = 800;
 public double TowerNeededCalm = 500;
 public int TowerNeed = 3;
 public double Exposure = 1;
@@ -511,7 +523,7 @@ public double MineFar = 0.4;
 public int MineFarDist = 1200;
 public double EnemyTower = 0.5;
 public double EnemyTowerBase = 300;
-public double Mine = 3;
+public double Mine = 4;
 public double EnemyMine = 2;
 public double Gold = 4;
 public int GoldCap = 300;
@@ -522,6 +534,12 @@ public double FarKnight = 1.0;
 public double Giant = 2;
 public double EnemyGiant = 2;
 public double NoBarracks = 5000;
+public double EconShort = 400;
+public int EconTarget = 6;
+public int ShapingDist = 1200;
+public double Readiness = 1.5;
+public int DefenseNeed = 600;
+public int DefenseRadius = 450;
 public double GiantBarracks = 1500;
 public int GiantWhenTowers = 2;
 public double ExtraBarracks = 500;
@@ -553,6 +571,11 @@ case "far": FarKnight = v; break;
 case "giant": Giant = v; break;
 case "egiant": EnemyGiant = v; break;
 case "nobar": NoBarracks = v; break;
+case "econshort": EconShort = v; break;
+case "econtarget": EconTarget = (int)v; break;
+case "readiness": Readiness = v; break;
+case "defneed": DefenseNeed = (int)v; break;
+case "defradius": DefenseRadius = (int)v; break;
 case "giantbar": GiantBarracks = v; break;
 case "goldcap": GoldCap = (int)v; break;
 case "extrabar": ExtraBarracks = v; break;
@@ -590,9 +613,19 @@ if (st.Structure == StructureType.Barracks && st.Owner != me && st.CreepType == 
 bool enemyKnightsAlive = false;
 for (int i = 0; i < s.CreepCount[e]; i++) if (s.Creeps[e][i].Type == 0) { enemyKnightsComing = true; enemyKnightsAlive = true; break; }
 double safeD2 = SimState.D2(homeX, homeY, qx, qy);
+double enemyHomeX = Consts.WorldWidth - homeX, enemyHomeY = Consts.WorldHeight - homeY;
+double dFree = double.MaxValue, dGold = double.MaxValue;
+int income = 0, towerHpNear = 0;
+double defR2 = (double)w.DefenseRadius * w.DefenseRadius;
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
+if (st.Structure == StructureType.None)
+{
+double d = SimState.D2(st.X, st.Y, qx, qy);
+if (d < dFree) dFree = d;
+if (st.Gold != 0 && d < dGold && SimState.D2(st.X, st.Y, homeX, homeY) < SimState.D2(st.X, st.Y, enemyHomeX, enemyHomeY)) dGold = d;
+}
 switch (st.Structure)
 {
 case StructureType.Tower:
@@ -603,6 +636,7 @@ double baseV = myTowers <= w.TowerNeed ? (enemyKnightsComing ? w.TowerNeeded : w
 v += (baseV + w.Tower * st.Hp) * towerF;
 double d2 = SimState.D2(st.X, st.Y, qx, qy);
 if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
+if (d2 < defR2) towerHpNear += st.Hp;
 if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
 }
 else { v -= (w.EnemyTowerBase + w.EnemyTower * st.Hp) * towerF; enemyTowers++; }
@@ -613,6 +647,7 @@ double yield = st.Rate * left;
 if (st.Gold >= 0 && st.Gold < yield) yield = st.Gold;
 if (st.Owner == me)
 {
+income += st.Rate;
 double dHome = Math.Sqrt(SimState.D2(st.X, st.Y, homeX, homeY));
 v += w.Mine * yield * (1 - w.MineFar * Math.Min(1.0, dHome / w.MineFarDist));
 }
@@ -630,8 +665,12 @@ else if (st.CreepType == 0) enemyKnightsComing = true;
 break;
 }
 }
-if (knightBarracks == 0) v -= w.NoBarracks;
-if (giantBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
+if (knightBarracks == 0)
+v -= w.NoBarracks * (dFree == double.MaxValue ? 1.0 : 0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dFree) / w.ShapingDist));
+int shortfall = w.EconTarget - income;
+if (shortfall > 0 && dGold != double.MaxValue)
+v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
+if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
 if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
 double gold = Math.Min(s.Gold[me], w.GoldCap);
 v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);
@@ -653,6 +692,7 @@ enemyKnightsComing = true;
 else if (c.Type == 2) v -= w.EnemyGiant * c.Health;
 }
 if (enemyKnightsComing && covered) v += w.Cover;
+if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * (w.DefenseNeed - towerHpNear);
 if (enemyKnightsAlive)
 {
 double safeD = Math.Sqrt(safeD2);
@@ -679,10 +719,15 @@ public int NearSites = 4;
 public int GiantWhenTowers = 2;
 public int SecondBarracksIncome = 6;
 public int KnightZone = 250;
+public int MaxTowersCalm = 3;
+public int TargetIncome = 6;
+public int TowersEarly = 2;
+public int UpgradeCalmBelow = 350;
+public int FarMineSites = 2;
 private readonly List<int> _train = new List<int>();
 private readonly int[][][] _trainBuf = { new int[16][], new int[16][] };
-private readonly int[] _near = new int[8];
-private readonly double[] _nearD = new double[8];
+private readonly int[] _near = new int[12];
+private readonly double[] _nearD = new double[12];
 public int[] Train(SimState s, int me)
 {
 _train.Clear();
@@ -737,6 +782,16 @@ if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarra
 else if (st.Structure == StructureType.Mine) income += st.Rate;
 }
 int wantKnightBarracks = 1 + (income >= SecondBarracksIncome ? 1 : 0);
+int myTowers = 0;
+for (int i = 0; i < s.Sites.Length; i++) if (s.Sites[i].Owner == me && s.Sites[i].Structure == StructureType.Tower) myTowers++;
+bool knightsAlive = false;
+for (int i = 0; i < s.CreepCount[1 - me]; i++) if (s.Creeps[1 - me][i].Type == 0) { knightsAlive = true; break; }
+bool enemyKnightBarracks = false;
+for (int i = 0; i < s.Sites.Length; i++)
+if (s.Sites[i].Structure == StructureType.Barracks && s.Sites[i].Owner != me && s.Sites[i].CreepType == 0) { enemyKnightBarracks = true; break; }
+bool towersAllowed = knightsAlive
+|| (income >= TargetIncome && myTowers < MaxTowersCalm)
+|| (enemyKnightBarracks && myTowers < TowersEarly);
 int k = Math.Min(NearSites, _near.Length);
 int found = 0;
 for (int i = 0; i < s.Sites.Length; i++)
@@ -754,6 +809,27 @@ pos = worst;
 }
 _near[pos] = i; _nearD[pos] = d;
 }
+if (Rules.Mines)
+{
+for (int extra = 0; extra < FarMineSites && found < _near.Length; extra++)
+{
+int best = -1; double bestD = double.MaxValue;
+double hx = me == 0 ? 200 : Consts.WorldWidth - 200, hy = me == 0 ? 200 : Consts.WorldHeight - 200;
+for (int i = 0; i < s.Sites.Length; i++)
+{
+SimSite st = s.Sites[i];
+if (st.Structure != StructureType.None || st.Gold == 0) continue;
+if (SimState.D2(st.X, st.Y, hx, hy) > SimState.D2(st.X, st.Y, Consts.WorldWidth - hx, Consts.WorldHeight - hy)) continue;
+bool dup = false;
+for (int j = 0; j < found; j++) if (_near[j] == i) { dup = true; break; }
+if (dup) continue;
+double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
+if (d < bestD) { bestD = d; best = i; }
+}
+if (best < 0) break;
+_near[found] = best; _nearD[found] = bestD; found++;
+}
+}
 for (int j = 0; j < found && n < buf.Length - 5; j++)
 {
 SimSite st = s.Sites[_near[j]];
@@ -761,7 +837,7 @@ bool takeable = st.Structure == StructureType.None || st.Owner != me;
 if (takeable)
 {
 if (Rules.Mines && st.Gold != 0 && !EnemyKnightNear(s, me, st.X, st.Y)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
-if (Rules.Towers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+if (Rules.Towers && towersAllowed) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
 if (knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
 if (Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
 }
@@ -771,7 +847,7 @@ if (st.MaxMineSize < 0 || st.Rate < st.MaxMineSize) buf[n++] = QueenAction.Build
 }
 else if (st.Structure == StructureType.Tower)
 {
-if (st.Hp <= Consts.TowerHpMax - Consts.TowerHpIncrement) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
+if (st.Hp <= Consts.TowerHpMax - Consts.TowerHpIncrement && (st.Hp < UpgradeCalmBelow || knightsAlive)) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
 }
 }
 return n;
@@ -802,6 +878,9 @@ public int RolloutTurns = 8;
 public int RolloutLeaves = 6;
 public double RolloutWeight = 0.7;
 public bool Debug;
+public double Persist = 150;
+private QueenAction _lastAction;
+private bool _hasLast;
 public int FirstTurnMs = 300;
 public readonly EvalWeights W = new EvalWeights();
 public readonly Macro Macro = new Macro();
@@ -940,13 +1019,22 @@ double after = Eval.Score(_scratch, me, W, _rnd);
 mix = (1 - RolloutWeight) * leaf.Score + RolloutWeight * after;
 rolled++;
 }
+if (_hasLast && SameAction(leaf.First, _lastAction)) mix += Persist;
 if (mix > bestMix) { bestMix = mix; bestFirst = leaf.First; bestScore = mix; }
 }
 expanded += rolled * RolloutTurns;
 }
+_lastAction = bestFirst; _hasLast = true;
 LastInfo = "depth " + depthDone + " nodes " + expanded + " score " + bestScore.ToString("F0") + " " + clock.ElapsedMs + " ms";
 if (_log != null) _log.WriteLine(LastInfo);
 return bestFirst;
+}
+private static bool SameAction(QueenAction a, QueenAction b)
+{
+if (a.Kind != b.Kind) return false;
+if (a.Kind == QueenActionKind.Build) return a.SiteId == b.SiteId && a.Build == b.Build;
+if (a.Kind == QueenActionKind.Move) return a.X == b.X && a.Y == b.Y;
+return true;
 }
 private static int CountOwn(SimState s, int me, StructureType t)
 {

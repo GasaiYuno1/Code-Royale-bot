@@ -34,6 +34,9 @@ namespace Royale
         public double EconShort = 400;      // за единицу недобора дохода до EconTarget, половина снимается по мере подхода к свободному сайту с золотом на своей половине
         public int EconTarget = 6;
         public int ShapingDist = 1200;
+        public double Readiness = 1.5;      // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed)
+        public int DefenseNeed = 600;
+        public int DefenseRadius = 450;
         public double GiantBarracks = 1500; // есть казарма гигантов, когда у врага >= GiantWhenTowers башен
         public int GiantWhenTowers = 2;
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
@@ -68,6 +71,9 @@ namespace Royale
                 case "nobar": NoBarracks = v; break;
                 case "econshort": EconShort = v; break;
                 case "econtarget": EconTarget = (int)v; break;
+                case "readiness": Readiness = v; break;
+                case "defneed": DefenseNeed = (int)v; break;
+                case "defradius": DefenseRadius = (int)v; break;
                 case "giantbar": GiantBarracks = v; break;
                 case "goldcap": GoldCap = (int)v; break;
                 case "extrabar": ExtraBarracks = v; break;
@@ -111,7 +117,8 @@ namespace Royale
             double safeD2 = SimState.D2(homeX, homeY, qx, qy);
             double enemyHomeX = Consts.WorldWidth - homeX, enemyHomeY = Consts.WorldHeight - homeY;
             double dFree = double.MaxValue, dGold = double.MaxValue;
-            int income = 0;
+            int income = 0, towerHpNear = 0;
+            double defR2 = (double)w.DefenseRadius * w.DefenseRadius;
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
@@ -131,6 +138,7 @@ namespace Royale
                             v += (baseV + w.Tower * st.Hp) * towerF;
                             double d2 = SimState.D2(st.X, st.Y, qx, qy);
                             if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
+                            if (d2 < defR2) towerHpNear += st.Hp;
                             if (st.Hp >= 100 && d2 < safeD2) safeD2 = d2;
                         }
                         else { v -= (w.EnemyTowerBase + w.EnemyTower * st.Hp) * towerF; enemyTowers++; }
@@ -164,7 +172,7 @@ namespace Royale
             int shortfall = w.EconTarget - income;
             if (shortfall > 0 && dGold != double.MaxValue)
                 v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
-            if (giantBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
+            if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers) v += w.GiantBarracks;
             if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
             double gold = Math.Min(s.Gold[me], w.GoldCap);
             v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);
@@ -187,6 +195,7 @@ namespace Royale
                 else if (c.Type == 2) v -= w.EnemyGiant * c.Health;
             }
             if (enemyKnightsComing && covered) v += w.Cover;
+            if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * (w.DefenseNeed - towerHpNear);
             if (enemyKnightsAlive)
             {
                 double safeD = Math.Sqrt(safeD2);

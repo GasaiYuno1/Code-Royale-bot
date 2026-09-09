@@ -57,6 +57,7 @@ namespace Royale
                     case "rollout": s.RolloutTurns = iv; break;
                     case "leaves": s.RolloutLeaves = iv; break;
                     case "fine": s.FineDepth = iv; break;
+                    case "persist": s.Persist = v; break;
                     case "debug": s.Debug = iv != 0; break;
                     case "rolloutw": s.RolloutWeight = v; break;
                     case "sites": s.Macro.NearSites = iv; break;

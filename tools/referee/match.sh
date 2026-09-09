@@ -21,5 +21,7 @@ resolve() {
   esac
 }
 
-exec java --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED -Dleague.level="$LEAGUE" -cp "$(cat "$BUILD/classpath.txt")" com.codingame.gameengine.runner.Match \
+# JAVA_OPTS: доп. параметры JVM рефери (например, -Xlog:gc:file=build/logs/gc.log для поиска пауз GC)
+# TURN_MS: лимит хода рефери (по умолчанию 50 как на CodinGame; 200 — чтобы паузы JVM не убивали ботов в статистике)
+exec java ${JAVA_OPTS:-} -Dturn.max.time="${TURN_MS:-50}" --add-opens java.base/java.lang=ALL-UNNAMED --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.util=ALL-UNNAMED -Dleague.level="$LEAGUE" -cp "$(cat "$BUILD/classpath.txt")" com.codingame.gameengine.runner.Match \
   -games "$GAMES" -seed "$SEED" -p1 "$(resolve "$A")" -p2 "$(resolve "$B")" "$@" 2> >(grep -v "Picked up JAVA_TOOL_OPTIONS" >&2)

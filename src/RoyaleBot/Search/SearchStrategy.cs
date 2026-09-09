@@ -20,6 +20,9 @@ namespace Royale
         public int RolloutLeaves = 6;   // сколько лучших листьев продолжать (резерв времени = их шаги по замеренной цене, но не больше трети бюджета)
         public double RolloutWeight = 0.7;  // доля оценки после продолжения в итоговой оценке листа
         public bool Debug;              // печатать кандидатов корня с оценками (ключ debug=1)
+        public double Persist = 150;    // премия цепочке, начинающейся с прошлого действия (против метаний между планами)
+        private QueenAction _lastAction;
+        private bool _hasLast;
         public int FirstTurnMs = 300;   // на первом ходу (лимит 1000 мс, JIT)
         public readonly EvalWeights W = new EvalWeights();
         public readonly Macro Macro = new Macro();
@@ -177,13 +180,23 @@ namespace Royale
                         mix = (1 - RolloutWeight) * leaf.Score + RolloutWeight * after;
                         rolled++;
                     }
+                    if (_hasLast && SameAction(leaf.First, _lastAction)) mix += Persist;
                     if (mix > bestMix) { bestMix = mix; bestFirst = leaf.First; bestScore = mix; }
                 }
                 expanded += rolled * RolloutTurns;
             }
+            _lastAction = bestFirst; _hasLast = true;
             LastInfo = "depth " + depthDone + " nodes " + expanded + " score " + bestScore.ToString("F0") + " " + clock.ElapsedMs + " ms";
             if (_log != null) _log.WriteLine(LastInfo);
             return bestFirst;
+        }
+
+        private static bool SameAction(QueenAction a, QueenAction b)
+        {
+            if (a.Kind != b.Kind) return false;
+            if (a.Kind == QueenActionKind.Build) return a.SiteId == b.SiteId && a.Build == b.Build;
+            if (a.Kind == QueenActionKind.Move) return a.X == b.X && a.Y == b.Y;
+            return true;
         }
 
         private static int CountOwn(SimState s, int me, StructureType t)

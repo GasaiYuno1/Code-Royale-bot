@@ -13,6 +13,7 @@ namespace Royale
         private readonly IStrategy _strategy;
         private readonly TextWriter _log;
         private readonly SiteMemory _memory = new SiteMemory();
+        private long _lastEnd, _sinceLastMs;   // пауза между отправкой ответа и приходом следующего ввода (для диагностики таймаутов)
 
         public Bot(IStrategy strategy, TextWriter log)
         {
@@ -40,11 +41,14 @@ namespace Royale
                 string line = input.ReadLine();
                 if (line == null) return;
                 if (turn > 0) clock = new TurnClock(TimeLimits.TurnMs - TimeLimits.SafetyMarginMs);
+                _sinceLastMs = _lastEnd == 0 ? 0 : (System.Diagnostics.Stopwatch.GetTimestamp() - _lastEnd) * 1000 / System.Diagnostics.Stopwatch.Frequency;
 
                 TurnOutput answer;
+                long readMs = 0;
                 try
                 {
                     TurnInput t = InputParser.ReadTurn(line, input, sites);
+                    readMs = clock.ElapsedMs;
                     _memory.Apply(t);
                     if (turn == 0)
                     {
@@ -61,10 +65,12 @@ namespace Royale
                 }
 
                 string q = answer.Queen.Format(), tr = answer.TrainLine();
+                long thinkMs = clock.ElapsedMs;
                 output.WriteLine(q);
                 output.WriteLine(tr);
                 output.Flush();
-                _log.WriteLine("turn " + turn + " in " + clock.ElapsedMs + " ms: " + q + " | " + tr);
+                _log.WriteLine("turn " + turn + " in " + clock.ElapsedMs + " ms (read " + readMs + ", think " + thinkMs + ", gap " + _sinceLastMs + "): " + q + " | " + tr);
+                _lastEnd = System.Diagnostics.Stopwatch.GetTimestamp();
                 turn++;
             }
         }
