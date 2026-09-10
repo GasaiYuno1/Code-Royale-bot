@@ -6,7 +6,9 @@
 играет против замороженного эталона (умолчания сборки); лучший по этой проверке θ сохраняется в build/spsa/best.json,
 полный журнал — build/spsa/log.txt, состояние для --resume — build/spsa/state.json.
 
-  python3 tools/arena/spsa.py --iters 80 --games 300 --ms 6 --threads 4        # в фоне, на часы
+  python3 tools/arena/spsa.py --iters 80 --games 300 --ms 6 --threads 4        # в фоне, на часы (чистый self-play)
+  python3 tools/arena/spsa.py --iters 40 --games 320 --panel "wood=1 barlate=1 income=4 towers=3|" --panel-weight 0.5 --start build/spsa/best.json
+      # с панелью-регуляризатором: половина партий и градиента — θ+ и θ− против имитации босса и против умолчаний ('' = умолчания)
   python3 tools/arena/spsa.py --resume                                         # продолжить
   python3 tools/arena/spsa.py --check build/spsa/best.json --games 2000        # θ против эталона
   python3 tools/arena/spsa.py --vs "eknight=15" "" --games 400                 # быстрый матч A против B
@@ -108,6 +110,9 @@ def main():
     ap.add_argument("--decay", type=float, default=30.0, help="k_decay = decay/(iter+decay)")
     ap.add_argument("--cscale", type=float, default=1.0, help="множитель возмущения c")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--panel", default="", help="соперники-регуляризаторы через |: key=value каждого (пусто = только self-play); '' в списке = умолчания сборки")
+    ap.add_argument("--panel-weight", type=float, default=0.5, help="доля партий и веса градиента на панель (остальное — θ+ против θ−)")
+    ap.add_argument("--start", help="json с θ, с которого начать (вместо умолчаний)")
     ap.add_argument("--resume", action="store_true")
     ap.add_argument("--check", help="json с θ: только матч против эталона")
     ap.add_argument("--vs", nargs=2, metavar=("ARGS_A", "ARGS_B"), help="только матч: key=value для A и для B")
@@ -135,27 +140,51 @@ def main():
         log(f"resume at iter {it}: {fmt(theta)}")
     else:
         theta = {k: float(v[0]) for k, v in PARAMS.items()}
-        it, best = 0, {"score": 0.5, "theta": dict(theta), "iter": 0}
-        log(f"start (games {args.games}, ms {args.ms}, lr {args.lr}, decay {args.decay}): {fmt(theta)}")
+        if args.start:
+            theta = {k: float(v) for k, v in json.load(open(args.start)).items()}
+        it, best = 0, {"score": 0.0, "theta": dict(theta), "iter": 0}
+        log(f"start (games {args.games}, ms {args.ms}, lr {args.lr}, decay {args.decay}, panel {args.panel!r} w {args.panel_weight}): {fmt(theta)}")
+    panel = [p.strip() for p in args.panel.split("|")] if args.panel != "" else []
+    pw = args.panel_weight if panel else 0.0
 
     while it < args.iters:
         delta = {k: rng.choice((-1.0, 1.0)) for k in PARAMS}
         plus = clip({k: theta[k] + args.cscale * PARAMS[k][1] * delta[k] for k in PARAMS})
         minus = clip({k: theta[k] - args.cscale * PARAMS[k][1] * delta[k] for k in PARAMS})
         t0 = time.time()
-        w, n = match(args.games, args.seed * 100000 + it * 1000, args_of(plus), args_of(minus), args.ms, args.threads)
+        n_self = int(round(args.games * (1 - pw)))
+        w, n = match(n_self, args.seed * 100000 + it * 1000, args_of(plus), args_of(minus), args.ms, args.threads)
         wr = w / n
+        signal = (1 - pw) * (2 * wr - 1)
+        panel_txt = ""
+        if panel:
+            n_p = max(2, int(round(args.games * pw / len(panel) / 2)))
+            diffs = []
+            for pi, opp in enumerate(panel):
+                wp, np_ = match(n_p, args.seed * 100000 + it * 1000 + 100 + pi * 10, args_of(plus), opp, args.ms, args.threads)
+                wm, nm = match(n_p, args.seed * 100000 + it * 1000 + 100 + pi * 10, args_of(minus), opp, args.ms, args.threads)
+                diffs.append(wp / np_ - wm / nm)
+                panel_txt += f" P{pi} {100 * wp / np_:.0f}/{100 * wm / nm:.0f}"
+            signal += pw * sum(diffs) / len(diffs)
         k_decay = args.decay / (it + args.decay)
         for k in PARAMS:
-            theta[k] += args.lr * k_decay * (2 * wr - 1) * delta[k] * PARAMS[k][1]
+            theta[k] += args.lr * k_decay * signal * delta[k] * PARAMS[k][1]
         clip(theta)
         it += 1
-        log(f"iter {it}: plus {w:.1f}/{n} = {100 * wr:.1f}% ({time.time() - t0:.0f} s)  -> {fmt(theta)}")
+        log(f"iter {it}: self {w:.1f}/{n} = {100 * wr:.1f}%{panel_txt} signal {signal:+.3f} ({time.time() - t0:.0f} s)  -> {fmt(theta)}")
         if it % args.eval_every == 0:
             t0 = time.time()
             w, n = match(args.eval_games, args.seed * 100000 + 50000000 + it * 1000, args_of(theta), "", args.ms, args.threads)
-            score = w / n
-            log(f"  eval vs reference: {w:.1f}/{n} = {100 * score:.1f}% ({time.time() - t0:.0f} s)")
+            scores = [w / n]
+            txt = f"vs reference {w:.1f}/{n} = {100 * w / n:.1f}%"
+            for pi, opp in enumerate(panel):
+                if opp == "":
+                    continue
+                wp, np_ = match(args.eval_games // 2, args.seed * 100000 + 60000000 + it * 1000 + pi, args_of(theta), opp, args.ms, args.threads)
+                scores.append(wp / np_)
+                txt += f", vs P{pi} {wp:.1f}/{np_} = {100 * wp / np_:.1f}%"
+            score = sum(scores) / len(scores)
+            log(f"  eval {txt} -> score {100 * score:.1f}% ({time.time() - t0:.0f} s)")
             if score > best["score"]:
                 best = {"score": score, "theta": dict(theta), "iter": it}
                 json.dump(theta, open(OUT / "best.json", "w"), indent=1)
