@@ -517,48 +517,48 @@ namespace Royale
 {
 public sealed class EvalWeights
 {
-public double Hp = 100;
-public double EnemyHp = 50;
-public double LowHp = 5;
+public double Hp = 130;
+public double EnemyHp = 70;
+public double LowHp = 3.2;
 public int LowHpLevel = 40;
 public double Dead = 1e6;
-public double Tower = 0.25;
-public double TowerBase = 400;
-public double TowerNeeded = 800;
-public double TowerNeededCalm = 500;
+public double Tower = 0.36;
+public double TowerBase = 130;
+public double TowerNeeded = 500;
+public double TowerNeededCalm = 750;
 public int TowerNeed = 3;
-public double Exposure = 4;
+public double Exposure = 5;
 public int SafeRadius = 250;
 public int SafeTowerHp = 100;
-public double ExposureEta = 0.5;
-public double MineFar = 0.4;
+public double ExposureEta = 0.9;
+public double MineFar = 0.85;
 public int MineFarDist = 1200;
 public double EnemyTower = 0.5;
 public double EnemyTowerBase = 300;
-public double Mine = 4;
-public double EnemyMine = 2;
-public double Gold = 4;
+public double Mine = 3.8;
+public double EnemyMine = 1.9;
+public double Gold = 4.6;
 public int GoldCap = 300;
-public double Knight = 5;
-public double EnemyKnight = 15;
+public double Knight = 6.25;
+public double EnemyKnight = 10;
 public int KnightReach = 1200;
 public double FarKnight = 1.0;
 public double Giant = 2;
 public double EnemyGiant = 2;
-public double NoBarracks = 5000;
-public double EconShort = 400;
+public double NoBarracks = 6100;
+public double EconShort = 140;
 public int EconTarget = 6;
 public int ShapingDist = 1200;
-public double Readiness = 3;
-public int DefenseNeed = 600;
+public double Readiness = 1.5;
+public int DefenseNeed = 500;
 public int DefenseRadius = 450;
-public double GiantBarracks = 1500;
+public double GiantBarracks = 1350;
 public int GiantWhenTowers = 2;
 public double ExtraBarracks = 500;
 public int MaxBarracks = 2;
-public double Cover = 300;
-public double EnemyRange = 300;
-public double Lead = 5000;
+public double Cover = 10;
+public double EnemyRange = 320;
+public double Lead = 6500;
 public int LeadScale = 5;
 public int LeadTurns = 60;
 public double Noise = 1;
@@ -937,7 +937,7 @@ public int RolloutTurns = 8;
 public int RolloutLeaves = 6;
 public double RolloutWeight = 0.7;
 public bool Debug;
-public double Persist = 150;
+public double Persist = 240;
 public int MinWaveDamage = 1;
 public int WaveTurns = 40;
 public int LastWaveDamage = -1;
@@ -1425,7 +1425,7 @@ if (CreepCount[0] != 0 || CreepCount[1] != 0) return;
 double x0 = QueenX[0], y0 = QueenY[0], x1 = QueenX[1], y1 = QueenY[1];
 QueenX[0] = 200; QueenY[0] = 200;
 QueenX[1] = Consts.WorldWidth - 200; QueenY[1] = Consts.WorldHeight - 200;
-FixCollisions(999);
+FixCollisions(999, true);
 if (JavaMath.Round(QueenX[0]) != (int)x0 || JavaMath.Round(QueenY[0]) != (int)y0 ||
 JavaMath.Round(QueenX[1]) != (int)x1 || JavaMath.Round(QueenY[1]) != (int)y1)
 {
@@ -1548,21 +1548,32 @@ if (TowerTargetMode >= 5)
 for (int p = 0; p < 2; p++) for (int i = 0; i < CreepCount[p]; i++) Creeps[p][i].ShotThisTurn = false;
 if (GameOver) return;
 PrevQueenX[0] = QueenX[0]; PrevQueenY[0] = QueenY[0]; PrevQueenX[1] = QueenX[1]; PrevQueenY[1] = QueenY[1];
+long t0 = Profile ? Stopwatch.GetTimestamp() : 0;
 if (CreepsFirst) ProcessCreeps();
 ProcessPlayerActions(a0, a1);
 if (GameOver) { Turn++; return; }
+long t1 = Profile ? Stopwatch.GetTimestamp() : 0;
 if (!CreepsFirst) ProcessCreeps();
+long t2 = Profile ? Stopwatch.GetTimestamp() : 0;
 for (int i = 0; i < Sites.Length; i++) ActSite(i);
 if (Rules.FixedIncome)
 {
 Gold[0] += Consts.WoodFixedIncome;
 Gold[1] += Consts.WoodFixedIncome;
 }
+long t3 = Profile ? Stopwatch.GetTimestamp() : 0;
 RemoveDead();
 CheckEnd();
 Snap();
 Turn++;
+if (Profile)
+{
+long t4 = Stopwatch.GetTimestamp();
+ProfActions += t1 - t0; ProfCreeps += t2 - t1; ProfSites += t3 - t2; ProfEnd += t4 - t3;
 }
+}
+public static bool Profile;
+public static long ProfActions, ProfCreeps, ProfSites, ProfEnd, ProfMove, ProfCollide, ProfDamage, ProfTail, ProfLoad, ProfBuild, ProfPass, ProfStore;
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void ProcessPlayerActions(SimAction a0, SimAction a1)
 {
@@ -1686,14 +1697,20 @@ private void ProcessCreeps()
 BuildOrder();
 for (int sub = 0; sub < 5; sub++)
 {
+long m0 = Profile ? Stopwatch.GetTimestamp() : 0;
 for (int k = 0; k < _nOrder; k++) MoveCreep(_order[k].P, _order[k].I);
-FixCollisions(SubstepIterations);
+long m1 = Profile ? Stopwatch.GetTimestamp() : 0;
+FixCollisions(SubstepIterations, sub == 0);
+if (Profile) { long m2 = Stopwatch.GetTimestamp(); ProfMove += m1 - m0; ProfCollide += m2 - m1; }
 }
+long d0 = Profile ? Stopwatch.GetTimestamp() : 0;
 for (int k = 0; k < _nOrder; k++) DealDamage(_order[k].P, _order[k].I);
+if (Profile) { long d1 = Stopwatch.GetTimestamp(); ProfDamage += d1 - d0; _tailStart = d1; }
 for (int k = 0; k < _nOrder; k++)
 {
 SimUnit c = Creeps[_order[k].P][_order[k].I];
-int idx = ClosestSite(c.X, c.Y);
+int idx = SubstepIterations > 0 ? ClosestSiteNear(BodyIndexOf(_order[k].P, _order[k].I), c.X, c.Y) : ClosestSite(c.X, c.Y);
+if (idx < 0) continue;
 int lim = Sites[idx].Radius + c.Radius + Consts.TouchingDelta;
 if (D2(Sites[idx].X, Sites[idx].Y, c.X, c.Y) >= (double)(lim * lim)) continue;
 if (Sites[idx].Structure == StructureType.Mine && Sites[idx].Owner != _order[k].P) Sites[idx].Clear();
@@ -1712,7 +1729,9 @@ if (D2(Sites[idx].X, Sites[idx].Y, QueenX[p], QueenY[p]) >= (double)(lim * lim))
 StructureType st = Sites[idx].Structure;
 if ((st == StructureType.Mine || st == StructureType.Barracks) && Sites[idx].Owner != p) Sites[idx].Clear();
 }
+if (Profile) ProfTail += Stopwatch.GetTimestamp() - _tailStart;
 }
+private long _tailStart;
 private int ClosestSite(double x, double y)
 {
 int best = 0;
@@ -1979,7 +1998,7 @@ Towards(ref c.X, ref c.Y, QueenX[e], QueenY[e], 30.0);
 }
 AddCreep(p, c);
 }
-FixCollisions(999);
+FixCollisions(999, true);
 }
 private void RemoveDead()
 {
@@ -2042,11 +2061,12 @@ Resized(dx, dy, maxDist, out rx, out ry);
 x = x + rx; y = y + ry;
 }
 private int _nUnits;
+private int _sitesAt = -1, _sitesLen = -1;
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void LoadBodies()
 {
 int n = CreepCount[0] + CreepCount[1] + 2 + Sites.Length;
-if (_bodies.Length < n) _bodies = new Body[Math.Max(n, _bodies.Length * 2)];
+if (_bodies.Length < n) { _bodies = new Body[Math.Max(n, _bodies.Length * 2)]; _sitesAt = -1; }
 int k = 0;
 for (int p = 0; p < 2; p++)
 {
@@ -2061,8 +2081,12 @@ if (InterleavedQueens && !QueenFirst) _bodies[k++] = new Body { X = QueenX[p], Y
 if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
 _nUnits = k;
-for (int i = 0; i < Sites.Length; i++) _bodies[k++] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
-_nBodies = k;
+if (_sitesAt != k || _sitesLen != Sites.Length)
+{
+for (int i = 0; i < Sites.Length; i++) _bodies[k + i] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
+_sitesAt = k; _sitesLen = Sites.Length;
+}
+_nBodies = k + Sites.Length;
 }
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private void StoreBodies()
@@ -2080,13 +2104,87 @@ if (InterleavedQueens && !QueenFirst) { QueenX[p] = _bodies[k].X; QueenY[p] = _b
 if (!InterleavedQueens)
 for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
 }
+private const double NeighborMargin = 320;
+private int[] _nbStart = new int[128], _nbCount = new int[128];
+private int[] _nb = new int[16384];
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-private void FixCollisions(int maxIterations)
+private void BuildNeighbors()
 {
+int n = _nBodies, nUnits = _nUnits;
+if (_nbStart.Length < n) { _nbStart = new int[n * 2]; _nbCount = new int[n * 2]; }
+if (_nb.Length < n * n) _nb = new int[n * n * 2];
+int nSites = n - nUnits;
+if (_siteNbCount.Length < nSites || _siteNb.Length < nSites * (nUnits + 1))
+{
+_siteNbCount = new int[Math.Max(nSites, _siteNbCount.Length)];
+_siteNb = new int[Math.Max(nSites * (nUnits + 1) * 2, _siteNb.Length)];
+}
+int stride = nUnits + 1;
+for (int sIdx = 0; sIdx < nSites; sIdx++) _siteNbCount[sIdx] = 0;
+int k = 0;
+for (int i = 0; i < nUnits; i++)
+{
+_nbStart[i] = k;
+double xi = _bodies[i].X, yi = _bodies[i].Y;
+int ri = _bodies[i].Radius;
+for (int j = 0; j < n; j++)
+{
+if (j == i) continue;
+double dx = _bodies[j].X - xi, dy = _bodies[j].Y - yi;
+double lim = ri + _bodies[j].Radius + NeighborMargin;
+if (dx * dx + dy * dy < lim * lim)
+{
+_nb[k++] = j;
+if (j >= nUnits) { int sIdx = j - nUnits; _siteNb[sIdx * stride + _siteNbCount[sIdx]++] = i; }
+}
+}
+_nbCount[i] = k - _nbStart[i];
+}
+for (int sIdx = 0; sIdx < nSites; sIdx++)
+{
+int i = nUnits + sIdx;
+_nbStart[i] = k;
+int cnt = _siteNbCount[sIdx];
+for (int q = 0; q < cnt; q++) _nb[k++] = _siteNb[sIdx * stride + q];
+_nbCount[i] = cnt;
+}
+}
+private int[] _siteNbCount = new int[32];
+private int[] _siteNb = new int[32 * 130];
+private int BodyIndexOf(int p, int i)
+{
+int k = InterleavedQueens && QueenFirst ? 1 : 0;
+if (p == 1) k += CreepCount[0] + (InterleavedQueens ? 1 : 0);
+return k + i;
+}
+private int ClosestSiteNear(int body, double x, double y)
+{
+int best = -1;
+double bestD = double.MaxValue;
+int qEnd = _nbStart[body] + _nbCount[body];
+for (int q = _nbStart[body]; q < qEnd; q++)
+{
+int j = _nb[q];
+if (j < _nUnits) continue;
+int sIdx = j - _nUnits;
+double d = D2(Sites[sIdx].X, Sites[sIdx].Y, x, y);
+if (d < bestD) { bestD = d; best = sIdx; }
+}
+return best;
+}
+[MethodImpl(MethodImplOptions.AggressiveOptimization)]
+private void FixCollisions(int maxIterations, bool rebuildNeighbors)
+{
+long c0 = Profile ? Stopwatch.GetTimestamp() : 0;
 LoadBodies();
+long c1 = Profile ? Stopwatch.GetTimestamp() : 0;
+if (rebuildNeighbors) BuildNeighbors();
+long c2 = Profile ? Stopwatch.GetTimestamp() : 0;
 for (int it = 0; it < maxIterations; it++)
 if (!CollisionPass()) break;
+long c3 = Profile ? Stopwatch.GetTimestamp() : 0;
 StoreBodies();
+if (Profile) { long c4 = Stopwatch.GetTimestamp(); ProfLoad += c1 - c0; ProfBuild += c2 - c1; ProfPass += c3 - c2; ProfStore += c4 - c3; }
 }
 [MethodImpl(MethodImplOptions.AggressiveOptimization)]
 private bool CollisionPass()
@@ -2104,12 +2202,12 @@ double x = _bodies[i].X, y = _bodies[i].Y;
 _bodies[i].X = x < clamp ? clamp : x > maxX ? maxX : x;
 _bodies[i].Y = y < clamp ? clamp : y > maxY ? maxY : y;
 }
-int jEnd = site ? nUnits : n;
 double xi = _bodies[i].X, yi = _bodies[i].Y;
 int ri = _bodies[i].Radius;
-for (int j = 0; j < jEnd; j++)
+int qEnd = _nbStart[i] + _nbCount[i];
+for (int q = _nbStart[i]; q < qEnd; q++)
 {
-if (j == i) continue;
+int j = _nb[q];
 double dx = _bodies[j].X - xi, dy = _bodies[j].Y - yi;
 double d2 = dx * dx + dy * dy;
 int rsum = ri + _bodies[j].Radius;
