@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -32,21 +33,34 @@ namespace Royale
                 for (int p = 0; p < 2; p++) for (int i = 0; i < CreepCount[p]; i++) Creeps[p][i].ShotThisTurn = false;
             if (GameOver) return;
             PrevQueenX[0] = QueenX[0]; PrevQueenY[0] = QueenY[0]; PrevQueenX[1] = QueenX[1]; PrevQueenY[1] = QueenY[1];
+            long t0 = Profile ? Stopwatch.GetTimestamp() : 0;
             if (CreepsFirst) ProcessCreeps();
             ProcessPlayerActions(a0, a1);
             if (GameOver) { Turn++; return; }
+            long t1 = Profile ? Stopwatch.GetTimestamp() : 0;
             if (!CreepsFirst) ProcessCreeps();
+            long t2 = Profile ? Stopwatch.GetTimestamp() : 0;
             for (int i = 0; i < Sites.Length; i++) ActSite(i);
             if (Rules.FixedIncome)
             {
                 Gold[0] += Consts.WoodFixedIncome;
                 Gold[1] += Consts.WoodFixedIncome;
             }
+            long t3 = Profile ? Stopwatch.GetTimestamp() : 0;
             RemoveDead();
             CheckEnd();
             Snap();
             Turn++;
+            if (Profile)
+            {
+                long t4 = Stopwatch.GetTimestamp();
+                ProfActions += t1 - t0; ProfCreeps += t2 - t1; ProfSites += t3 - t2; ProfEnd += t4 - t3;
+            }
         }
+
+        /// <summary>Профиль фаз шага (bench profile=1): тики Stopwatch по фазам; внутри ProcessCreeps отдельно движение/расталкивание/урон.</summary>
+        public static bool Profile;
+        public static long ProfActions, ProfCreeps, ProfSites, ProfEnd, ProfMove, ProfCollide, ProfDamage, ProfTail, ProfLoad, ProfBuild, ProfPass, ProfStore;
 
         // ---------- действия игроков ----------
 
@@ -185,16 +199,22 @@ namespace Royale
             BuildOrder();
             for (int sub = 0; sub < 5; sub++)
             {
+                long m0 = Profile ? Stopwatch.GetTimestamp() : 0;
                 for (int k = 0; k < _nOrder; k++) MoveCreep(_order[k].P, _order[k].I);
-                FixCollisions(SubstepIterations);
+                long m1 = Profile ? Stopwatch.GetTimestamp() : 0;
+                FixCollisions(SubstepIterations, sub == 0);
+                if (Profile) { long m2 = Stopwatch.GetTimestamp(); ProfMove += m1 - m0; ProfCollide += m2 - m1; }
             }
+            long d0 = Profile ? Stopwatch.GetTimestamp() : 0;
             for (int k = 0; k < _nOrder; k++) DealDamage(_order[k].P, _order[k].I);
+            if (Profile) { long d1 = Stopwatch.GetTimestamp(); ProfDamage += d1 - d0; _tailStart = d1; }
 
             // чужие шахты сносятся любым крипом, коснувшимся своего ближайшего сайта
             for (int k = 0; k < _nOrder; k++)
             {
                 SimUnit c = Creeps[_order[k].P][_order[k].I];
-                int idx = ClosestSite(c.X, c.Y);
+                int idx = SubstepIterations > 0 ? ClosestSiteNear(BodyIndexOf(_order[k].P, _order[k].I), c.X, c.Y) : ClosestSite(c.X, c.Y);
+                if (idx < 0) continue;
                 int lim = Sites[idx].Radius + c.Radius + Consts.TouchingDelta;
                 if (D2(Sites[idx].X, Sites[idx].Y, c.X, c.Y) >= (double)(lim * lim)) continue;
                 if (Sites[idx].Structure == StructureType.Mine && Sites[idx].Owner != _order[k].P) Sites[idx].Clear();
@@ -216,7 +236,9 @@ namespace Royale
                 StructureType st = Sites[idx].Structure;
                 if ((st == StructureType.Mine || st == StructureType.Barracks) && Sites[idx].Owner != p) Sites[idx].Clear();
             }
+            if (Profile) ProfTail += Stopwatch.GetTimestamp() - _tailStart;
         }
+        private long _tailStart;
 
         private int ClosestSite(double x, double y)
         {
@@ -496,7 +518,7 @@ namespace Royale
                 }
                 AddCreep(p, c);
             }
-            FixCollisions(999);
+            FixCollisions(999, true);
         }
 
         // ---------- конец хода ----------
@@ -572,12 +594,13 @@ namespace Royale
         }
 
         private int _nUnits;
+        private int _sitesAt = -1, _sitesLen = -1;
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
         private void LoadBodies()
         {
             int n = CreepCount[0] + CreepCount[1] + 2 + Sites.Length;
-            if (_bodies.Length < n) _bodies = new Body[Math.Max(n, _bodies.Length * 2)];
+            if (_bodies.Length < n) { _bodies = new Body[Math.Max(n, _bodies.Length * 2)]; _sitesAt = -1; }
             int k = 0;
             for (int p = 0; p < 2; p++)
             {
@@ -592,8 +615,14 @@ namespace Royale
             if (!InterleavedQueens)
                 for (int p = 0; p < 2; p++) _bodies[k++] = new Body { X = QueenX[p], Y = QueenY[p], Radius = Consts.QueenRadius, Mass = Consts.QueenMass };
             _nUnits = k;
-            for (int i = 0; i < Sites.Length; i++) _bodies[k++] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
-            _nBodies = k;
+            // сайты не двигаются: их тела грузятся один раз на экземпляр (позиции/радиусы сайтов за партию не меняются),
+            // но их место в массиве зависит от числа юнитов — перегружаем, только если сдвинулось начало блока сайтов
+            if (_sitesAt != k || _sitesLen != Sites.Length)
+            {
+                for (int i = 0; i < Sites.Length; i++) _bodies[k + i] = new Body { X = Sites[i].X, Y = Sites[i].Y, Radius = Sites[i].Radius, Mass = 0 };
+                _sitesAt = k; _sitesLen = Sites.Length;
+            }
+            _nBodies = k + Sites.Length;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
@@ -613,13 +642,101 @@ namespace Royale
                 for (int p = 0; p < 2; p++) { QueenX[p] = _bodies[k].X; QueenY[p] = _bodies[k].Y; k++; }
         }
 
+        // Списки соседей (широкая фаза): пары тел, которые могут пересечься за ход, в том же порядке обхода, что и полный проход.
+        // За ход юнит смещается не больше своей скорости (≤ 100) плюс расталкивание, поэтому пары дальше суммы радиусов + NeighborMargin
+        // не пересекутся ни на одном подшаге; результат бит-в-бит совпадает с полным проходом (проверяется фикстурами).
+        private const double NeighborMargin = 320;
+        private int[] _nbStart = new int[128], _nbCount = new int[128];
+        private int[] _nb = new int[16384];
+
         [MethodImpl(MethodImplOptions.AggressiveOptimization)]
-        private void FixCollisions(int maxIterations)
+        private void BuildNeighbors()
         {
+            int n = _nBodies, nUnits = _nUnits;
+            if (_nbStart.Length < n) { _nbStart = new int[n * 2]; _nbCount = new int[n * 2]; }
+            if (_nb.Length < n * n) _nb = new int[n * n * 2];
+            int nSites = n - nUnits;
+            if (_siteNbCount.Length < nSites || _siteNb.Length < nSites * (nUnits + 1))
+            {
+                _siteNbCount = new int[Math.Max(nSites, _siteNbCount.Length)];
+                _siteNb = new int[Math.Max(nSites * (nUnits + 1) * 2, _siteNb.Length)];
+            }
+            int stride = nUnits + 1;
+            for (int sIdx = 0; sIdx < nSites; sIdx++) _siteNbCount[sIdx] = 0;
+            int k = 0;
+            for (int i = 0; i < nUnits; i++)
+            {
+                _nbStart[i] = k;
+                double xi = _bodies[i].X, yi = _bodies[i].Y;
+                int ri = _bodies[i].Radius;
+                for (int j = 0; j < n; j++)
+                {
+                    if (j == i) continue;
+                    double dx = _bodies[j].X - xi, dy = _bodies[j].Y - yi;
+                    double lim = ri + _bodies[j].Radius + NeighborMargin;
+                    if (dx * dx + dy * dy < lim * lim)
+                    {
+                        _nb[k++] = j;
+                        if (j >= nUnits) { int sIdx = j - nUnits; _siteNb[sIdx * stride + _siteNbCount[sIdx]++] = i; }   // юниты по возрастанию i
+                    }
+                }
+                _nbCount[i] = k - _nbStart[i];
+            }
+            // строки сайтов: их соседи-юниты — зеркало строк юнитов (симметричное условие), уже по возрастанию
+            for (int sIdx = 0; sIdx < nSites; sIdx++)
+            {
+                int i = nUnits + sIdx;
+                _nbStart[i] = k;
+                int cnt = _siteNbCount[sIdx];
+                for (int q = 0; q < cnt; q++) _nb[k++] = _siteNb[sIdx * stride + q];
+                _nbCount[i] = cnt;
+            }
+        }
+
+        private int[] _siteNbCount = new int[32];
+        private int[] _siteNb = new int[32 * 130];
+
+        /// <summary>Индекс тела крипа (p, i) в порядке LoadBodies.</summary>
+        private int BodyIndexOf(int p, int i)
+        {
+            int k = InterleavedQueens && QueenFirst ? 1 : 0;
+            if (p == 1) k += CreepCount[0] + (InterleavedQueens ? 1 : 0);
+            return k + i;
+        }
+
+        /// <summary>
+        /// Ближайший сайт среди соседей тела (списки построены на подшаге 0 этого хода с запасом NeighborMargin):
+        /// если глобально ближайший сайт может быть в касании, он в списке; если списка нет — касания нет. -1, если соседей-сайтов нет.
+        /// </summary>
+        private int ClosestSiteNear(int body, double x, double y)
+        {
+            int best = -1;
+            double bestD = double.MaxValue;
+            int qEnd = _nbStart[body] + _nbCount[body];
+            for (int q = _nbStart[body]; q < qEnd; q++)
+            {
+                int j = _nb[q];
+                if (j < _nUnits) continue;
+                int sIdx = j - _nUnits;
+                double d = D2(Sites[sIdx].X, Sites[sIdx].Y, x, y);
+                if (d < bestD) { bestD = d; best = sIdx; }
+            }
+            return best;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveOptimization)]
+        private void FixCollisions(int maxIterations, bool rebuildNeighbors)
+        {
+            long c0 = Profile ? Stopwatch.GetTimestamp() : 0;
             LoadBodies();
+            long c1 = Profile ? Stopwatch.GetTimestamp() : 0;
+            if (rebuildNeighbors) BuildNeighbors();
+            long c2 = Profile ? Stopwatch.GetTimestamp() : 0;
             for (int it = 0; it < maxIterations; it++)
                 if (!CollisionPass()) break;
+            long c3 = Profile ? Stopwatch.GetTimestamp() : 0;
             StoreBodies();
+            if (Profile) { long c4 = Stopwatch.GetTimestamp(); ProfLoad += c1 - c0; ProfBuild += c2 - c1; ProfPass += c3 - c2; ProfStore += c4 - c3; }
         }
 
         /// <summary>
@@ -644,12 +761,12 @@ namespace Royale
                     _bodies[i].X = x < clamp ? clamp : x > maxX ? maxX : x;
                     _bodies[i].Y = y < clamp ? clamp : y > maxY ? maxY : y;
                 }
-                int jEnd = site ? nUnits : n;
                 double xi = _bodies[i].X, yi = _bodies[i].Y;
                 int ri = _bodies[i].Radius;
-                for (int j = 0; j < jEnd; j++)
+                int qEnd = _nbStart[i] + _nbCount[i];
+                for (int q = _nbStart[i]; q < qEnd; q++)
                 {
-                    if (j == i) continue;
+                    int j = _nb[q];
                     double dx = _bodies[j].X - xi, dy = _bodies[j].Y - yi;
                     double d2 = dx * dx + dy * dy;
                     int rsum = ri + _bodies[j].Radius;

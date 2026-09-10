@@ -183,7 +183,7 @@ namespace Royale
             double x0 = QueenX[0], y0 = QueenY[0], x1 = QueenX[1], y1 = QueenY[1];
             QueenX[0] = 200; QueenY[0] = 200;
             QueenX[1] = Consts.WorldWidth - 200; QueenY[1] = Consts.WorldHeight - 200;
-            FixCollisions(999);
+            FixCollisions(999, true);
             if (JavaMath.Round(QueenX[0]) != (int)x0 || JavaMath.Round(QueenY[0]) != (int)y0 ||
                 JavaMath.Round(QueenX[1]) != (int)x1 || JavaMath.Round(QueenY[1]) != (int)y1)
             {
