@@ -3,3 +3,4 @@ obj/
 build/
 .vs/
 *.user
+__pycache__/
