@@ -41,6 +41,9 @@ namespace Royale
         public double Readiness = 1.5;        // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed; тюнер 3b: 1.5 -> 3)
         public int DefenseNeed = 500;
         public int DefenseRadius = 450;
+        public double EnemyBarracks = 2000; // передовая чужая казарма рыцарей: штраф линейно убывает до нуля на EnemyBarracksDist от моего дома — поход снести её касанием (ключи ebar, ebardist)
+        public int EnemyBarracksDist = 1600;
+        public double EnemyBarracksIdle = 0.3;
         public double GiantBarracks = 1350; // есть казарма гигантов, когда у врага >= GiantWhenTowers башен
         public int GiantWhenTowers = 2;
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
@@ -91,6 +94,9 @@ namespace Royale
                 case "defneed": DefenseNeed = (int)v; break;
                 case "defradius": DefenseRadius = (int)v; break;
                 case "giantbar": GiantBarracks = v; break;
+                case "ebar": EnemyBarracks = v; break;
+                case "ebardist": EnemyBarracksDist = (int)v; break;
+                case "ebaridle": EnemyBarracksIdle = v; break;
                 case "goldcap": GoldCap = (int)v; break;
                 case "extrabar": ExtraBarracks = v; break;
                 case "maxbar": MaxBarracks = (int)v; break;
@@ -196,7 +202,12 @@ namespace Royale
                             if (st.CreepType == 0) knightBarracks++;
                             else if (st.CreepType == 2) giantBarracks++;
                         }
-                        else if (st.CreepType == 0) enemyKnightsComing = true;
+                        else if (st.CreepType == 0)
+                        {
+                            enemyKnightsComing = true;
+                            double dHome = Math.Sqrt(SimState.D2(st.X, st.Y, homeX, homeY));
+                            v -= w.EnemyBarracks * (st.Training ? 1.0 : w.EnemyBarracksIdle) * Math.Max(0.0, 1 - dHome / w.EnemyBarracksDist);   // простаивающая казарма — не поток
+                        }
                         break;
                 }
             }

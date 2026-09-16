@@ -76,6 +76,9 @@ namespace Royale
                     case "early": s.Macro.TowersEarly = iv; break;
                     case "upcalm": s.Macro.UpgradeCalmBelow = iv; break;
                     case "farmines": s.Macro.FarMineSites = iv; break;
+                    case "esites": s.Macro.EnemySites = iv; break;
+                    case "esitedist": s.Macro.EnemySiteDist = iv; break;
+                    case "esitemines": s.Macro.EnemySiteMines = iv != 0; break;
                     default:
                         if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
                         break;

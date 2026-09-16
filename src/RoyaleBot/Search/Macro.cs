@@ -17,6 +17,9 @@ namespace Royale
         public int LowHpRush = 0;          // чужая королева не выше этого HP: не копим на гигантов и не фильтруем волну — добиваем рыцарями (ключ lowhp; 20 спасло партию с противником на 12 HP за 3 башнями, но против эталона 3:7 вместо 6:4 на тех же сидах — выключено)
         public int GiantMinLeft = 40;      // гигантов не тренируем и не копим на них, когда до конца партии меньше ходов (стройка 10 + ход 50/ход; исход решает HP, не башни)
         public int SecondBarracksIncome = 6;
+        public int EnemySites = 2;         // ближайшие чужие шахты/казармы (не башни): королева сносит их касанием — цель для похода (ключ esites)
+        public int EnemySiteDist = 1200;   // ...не дальше этого от моего дома (ключ esitedist)
+        public bool EnemySiteMines = true; // сносить и чужие шахты, не только казармы (ключ esitemines)
         public int KnightZone = 250;       // не строить шахту, если чужой рыцарь ближе
         public int MaxTowersCalm = 3;      // без живых чужих рыцарей новые башни сверх этого не предлагаются
         public int TargetIncome = 6;       // пока доход меньше — фаза экономики: башни только при чужой казарме (до TowersEarly) или живых рыцарях
@@ -74,6 +77,30 @@ namespace Royale
             if (buf == null) pool[n] = buf = new int[n];
             for (int i = 0; i < n; i++) buf[i] = _train[i];
             return buf;
+        }
+
+        /// <summary>Добавляет в _near до k ближайших к королеве передовых чужих шахт и казарм (башни снести нельзя).</summary>
+        private int NearestEnemy(SimState s, int me, int from, int k)
+        {
+            int found = from, cap = Math.Min(from + k, _near.Length);
+            double hx = me == 0 ? 200 : Consts.WorldWidth - 200, hy = me == 0 ? 200 : Consts.WorldHeight - 200;
+            for (int i = 0; i < s.Sites.Length; i++)
+            {
+                SimSite st = s.Sites[i];
+                if (st.Owner == me || (st.Structure != (EnemySiteMines ? StructureType.Mine : StructureType.Barracks) && st.Structure != StructureType.Barracks)) continue;
+                if (SimState.D2(st.X, st.Y, hx, hy) > (double)EnemySiteDist * EnemySiteDist) continue;   // только передовые: не дальше EnemySiteDist от моего дома
+                double d = SimState.D2(st.X, st.Y, s.QueenX[me], s.QueenY[me]);
+                int pos = found < cap ? found++ : -1;
+                if (pos < 0)
+                {
+                    int worst = from;
+                    for (int j = from + 1; j < cap; j++) if (_nearD[j] > _nearD[worst]) worst = j;
+                    if (d >= _nearD[worst]) continue;
+                    pos = worst;
+                }
+                _near[pos] = i; _nearD[pos] = d;
+            }
+            return found;
         }
 
         /// <summary>Добавляет в _near до k ближайших к королеве сайтов: свободных (free) или своих (иначе), начиная с позиции from; возвращает новый размер.</summary>
@@ -136,6 +163,7 @@ namespace Royale
             // были нашими, строить было нечего — бот уходил бродить
             int found = Nearest(s, me, 0, NearSites, true);
             found = Nearest(s, me, found, NearOwn, false);
+            found = NearestEnemy(s, me, found, EnemySites);
             // ближайшие свободные сайты с золотом, даже далёкие: цель для похода за экономикой
             if (Rules.Mines)
             {
@@ -173,6 +201,11 @@ namespace Royale
                 {
                     if (st.MaxMineSize < 0 || st.Rate < st.MaxMineSize) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Mine);
                     if (Rules.Towers && knightsAlive) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);   // шахта -> башня под ударом
+                }
+                else if (st.Owner != me)
+                {
+                    // чужая шахта/казарма: идём к ней (снос касанием в конце хода), затем строим своё; пока чужая — BUILD даёт лишь предупреждение
+                    buf[n++] = Rules.Towers ? QueenAction.BuildAt(st.Id, BuildType.Tower) : QueenAction.BuildAt(st.Id, BuildType.Mine);
                 }
                 else if (st.Structure == StructureType.Tower)
                 {

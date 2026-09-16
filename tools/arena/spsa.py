@@ -49,6 +49,7 @@ PARAMS = {
     "readiness": (1.5, 0.7, 0, 8, False),
     "defneed": (500, 120, 100, 1500, True),
     "giantbar": (1350, 300, 0, 5000, False),
+    "ebar": (2000, 500, 0, 8000, False),
     "cover": (10, 80, 0, 1000, False),
     "lead": (6500, 1000, 0, 15000, False),
     "lowhpw": (3.2, 1.5, 0, 15, False),
