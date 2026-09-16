@@ -49,6 +49,8 @@ namespace Royale
                     case "danger": w.DangerRadius = iv; break;
                     case "wreach": w.TowerReach = iv; break;
                     case "barlate": w.BarracksLate = iv != 0; break;
+                    case "forward": w.Forward = iv != 0; break;
+                    case "bars": w.KnightBarracks = iv; break;
                     // SearchStrategy
                     case "depth": s.Depth = iv; break;
                     case "width": s.Width = iv; break;

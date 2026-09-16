@@ -477,6 +477,8 @@ case "upgrade": w.TowerUpgradeBelow = iv; break;
 case "danger": w.DangerRadius = iv; break;
 case "wreach": w.TowerReach = iv; break;
 case "barlate": w.BarracksLate = iv != 0; break;
+case "forward": w.Forward = iv != 0; break;
+case "bars": w.KnightBarracks = iv; break;
 case "depth": s.Depth = iv; break;
 case "width": s.Width = iv; break;
 case "ms": s.MaxMs = iv; break;
@@ -2355,6 +2357,8 @@ public int TowerReach = 700;
 public int EnemyZone = 350;
 public int KnightZone = 250;
 public bool BarracksLate;
+public bool Forward;
+public int KnightBarracks = 1;
 private int _homeX = -1, _homeY = -1;
 public void WarmUp(TurnClock clock) { }
 public TurnOutput Play(TurnInput t, TurnClock clock)
@@ -2430,9 +2434,9 @@ foreach (Site s in t.Sites)
 if (s.IsOwnBarracks(UnitType.Knight)) knightBarracks++;
 if (s.IsOwnTower) towers++;
 }
-if (knightBarracks == 0 && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)))
+if (knightBarracks < KnightBarracks && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)) && (knightBarracks == 0 || t.Income >= TargetIncome))
 {
-int i = Nearest(t, Filter.Empty);
+int i = Forward ? NearestToCenter(t) : Nearest(t, Filter.Empty);
 if (i >= 0) { type = BuildType.BarracksKnight; return i; }
 }
 if (Rules.Mines && t.Income < TargetIncome)
@@ -2463,6 +2467,22 @@ if (i < 0) i = Nearest(t, Filter.EmptyWithGold);
 if (i >= 0) { type = BuildType.Mine; return i; }
 }
 return -1;
+}
+private int NearestToCenter(TurnInput t)
+{
+UnitInfo eq = t.EnemyQueen;
+int best = -1;
+double bestD = double.MaxValue;
+for (int i = 0; i < t.Sites.Length; i++)
+{
+Site s = t.Sites[i];
+if (!s.IsEmpty) continue;
+if (Geom.Dist(s.X, s.Y, eq.X, eq.Y) < EnemyZone) continue;
+if (KnightNear(t, s.X, s.Y, KnightZone)) continue;
+double d = Geom.Dist(s.X, s.Y, Consts.WorldWidth / 2, Consts.WorldHeight / 2);
+if (d < bestD) { bestD = d; best = i; }
+}
+return best;
 }
 private int Nearest(TurnInput t, Filter f)
 {

@@ -19,6 +19,8 @@ namespace Royale
         public int EnemyZone = 350;         // сайты ближе этого к чужой королеве не берём
         public int KnightZone = 250;        // сайты с чужими рыцарями ближе этого не берём
         public bool BarracksLate;           // имитация босса Bronze: шахты и башни раньше казармы (barlate=1)
+        public bool Forward;                // имитация потока (40R15T3 в Gold): казармы рыцарей на свободном сайте ближе всех к центру карты (forward=1)
+        public int KnightBarracks = 1;      // сколько казарм рыцарей (bars=N)
 
         private int _homeX = -1, _homeY = -1;
 
@@ -109,9 +111,9 @@ namespace Royale
                 if (s.IsOwnTower) towers++;
             }
 
-            if (knightBarracks == 0 && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)))
+            if (knightBarracks < KnightBarracks && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)) && (knightBarracks == 0 || t.Income >= TargetIncome))
             {
-                int i = Nearest(t, Filter.Empty);
+                int i = Forward ? NearestToCenter(t) : Nearest(t, Filter.Empty);
                 if (i >= 0) { type = BuildType.BarracksKnight; return i; }
             }
 
@@ -145,6 +147,24 @@ namespace Royale
                 if (i >= 0) { type = BuildType.Mine; return i; }
             }
             return -1;
+        }
+
+        /// <summary>Свободный сайт ближе всех к центру карты (передовая казарма), не у чужой королевы и не под чужими рыцарями.</summary>
+        private int NearestToCenter(TurnInput t)
+        {
+            UnitInfo eq = t.EnemyQueen;
+            int best = -1;
+            double bestD = double.MaxValue;
+            for (int i = 0; i < t.Sites.Length; i++)
+            {
+                Site s = t.Sites[i];
+                if (!s.IsEmpty) continue;
+                if (Geom.Dist(s.X, s.Y, eq.X, eq.Y) < EnemyZone) continue;
+                if (KnightNear(t, s.X, s.Y, KnightZone)) continue;
+                double d = Geom.Dist(s.X, s.Y, Consts.WorldWidth / 2, Consts.WorldHeight / 2);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            return best;
         }
 
         /// <summary>Ближайший к моей королеве сайт под фильтр, не у чужой королевы и не рядом с чужими рыцарями.</summary>
