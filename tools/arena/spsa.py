@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent.parent
-ARENA = ROOT / "tests" / "RoyaleBot.Tests" / "bin" / "Release" / "net8.0" / "RoyaleBot.Tests.dll"
+ARENA = ROOT / "build" / "tests-x" / "RoyaleBot.Tests.dll"   # сборка тестов: dotnet build tests/RoyaleBot.Tests -c Release -o build/tests-x (НЕ tests/.../bin — там может лежать старая сборка бота)
 OUT = ROOT / "build" / "spsa"
 TOTAL_RE = re.compile(r"total a=(\d+) b=(\d+) d=(\d+)")
 
@@ -114,6 +114,7 @@ def main():
     ap.add_argument("--decay", type=float, default=30.0, help="k_decay = decay/(iter+decay)")
     ap.add_argument("--cscale", type=float, default=1.0, help="множитель возмущения c")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--arena", default=str(ARENA), help="RoyaleBot.Tests.dll для арены")
     ap.add_argument("--only", default="", help="возмущать только эти ключи через запятую (остальные держать на старте)")
     ap.add_argument("--panel", default="", help="соперники-регуляризаторы через |: key=value каждого (пусто = только self-play); '' в списке = умолчания сборки")
     ap.add_argument("--panel-weight", type=float, default=0.5, help="доля партий и веса градиента на панель (остальное — θ+ против θ−)")
@@ -136,6 +137,9 @@ def main():
         print(f"{w:.1f}/{n} = {100.0 * w / n:.1f}% vs reference: {fmt(theta)}")
         return
 
+    global ARENA
+    ARENA = Path(args.arena)
+    print(f'arena: {ARENA}', file=sys.stderr)
     only = set(k for k in args.only.split(',') if k)
     for k in only: assert k in PARAMS, k
     rng = random.Random(args.seed)
