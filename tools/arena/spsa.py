@@ -52,6 +52,7 @@ PARAMS = {
     "ebar": (2000, 500, 0, 8000, False),
     "archer": (4, 1.0, 0, 15, False),
     "archerbar": (800, 200, 0, 3000, False),
+    "threatmax": (3, 0.7, 1, 6, False),
     "cover": (10, 80, 0, 1000, False),
     "lead": (6500, 1000, 0, 15000, False),
     "lowhpw": (3.2, 1.5, 0, 15, False),

@@ -18,6 +18,8 @@ namespace Royale
         public double TowerNeededCalm = 750; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
         public bool TowerNeedNear = false;  // TowerNeeded только для башен в DefenseRadius от королевы (ключ neednear; зеркало 36% и 34% при 25 HP — выключено)
+        public double ThreatUnit = 0;       // (выключено: зеркало 181:210) масштаб угрозы = суммарное HP чужих рыцарей / ThreatUnit (одна волна = 1), не выше ThreatMax; умножает Exposure и Readiness (ключи threatunit, threatmax; 0 — выключено)
+        public double ThreatMax = 3;
         public double Exposure = 5;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
         public int SafeRadius = 250;
         public int SafeTowerHp = 100;       // башня считается укрытием (для Exposure) только от этого HP (ключ safehp)
@@ -74,6 +76,8 @@ namespace Royale
                 case "towerneed": TowerNeeded = v; break;
                 case "towercalm": TowerNeededCalm = v; break;
                 case "exposure": Exposure = v; break;
+                case "threatunit": ThreatUnit = v; break;
+                case "threatmax": ThreatMax = v; break;
                 case "safe": SafeRadius = (int)v; break;
                 case "safehp": SafeTowerHp = (int)v; break;
                 case "expeta": ExposureEta = v; break;
@@ -150,10 +154,11 @@ namespace Royale
             }
             bool enemyKnightsAlive = false;
             double knightD2 = double.MaxValue;
+            int enemyKnightHp = 0;
             for (int i = 0; i < s.CreepCount[e]; i++)
                 if (s.Creeps[e][i].Type == 0)
                 {
-                    enemyKnightsComing = true; enemyKnightsAlive = true;
+                    enemyKnightsComing = true; enemyKnightsAlive = true; enemyKnightHp += s.Creeps[e][i].Health;
                     double kd = SimState.D2(s.Creeps[e][i].X, s.Creeps[e][i].Y, qx, qy);
                     if (kd < knightD2) knightD2 = kd;
                 }
@@ -254,15 +259,16 @@ namespace Royale
                 else if (c.Type == 2) { v -= w.EnemyGiant * c.Health; enemyGiantsAlive = true; }
             }
             v += w.Archer * myArcherHp * (enemyGiantsAlive || enemyGiantBarracks ? 1.0 : 0.2);
+            double threat = w.ThreatUnit > 0 ? Math.Min(w.ThreatMax, Math.Max(1.0, enemyKnightHp / w.ThreatUnit)) : 1.0;
             if (enemyKnightsComing && covered) v += w.Cover;
-            if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * (w.DefenseNeed - towerHpNear);
+            if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * threat * (w.DefenseNeed - towerHpNear);
             if (enemyKnightsAlive)
             {
                 double safeD = Math.Sqrt(safeD2);
                 double late = safeD - w.SafeRadius;
                 // королева успевает в укрытие раньше рыцарей: её путь минус то, что она пройдёт, пока ближайший рыцарь идёт к ней
                 if (w.ExposureEta > 0) late -= Math.Sqrt(knightD2) * w.ExposureEta * Consts.QueenSpeed / CreepStats.Speed[0];
-                if (late > 0) v -= w.Exposure * late * (1 + Math.Max(0, 80 - myHp) / 40.0);
+                if (late > 0) v -= w.Exposure * threat * late * (1 + Math.Max(0, 80 - myHp) / 40.0);
             }
 
             if (w.Noise > 0) v += (rnd.NextDouble() - 0.5) * w.Noise;
