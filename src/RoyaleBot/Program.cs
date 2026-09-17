@@ -87,6 +87,8 @@ namespace Royale
                     case "esitemines": s.Macro.EnemySiteMines = iv != 0; break;
                     case "lowhptowers": s.Macro.LowHpTowers = iv; break;
                     case "archers": s.Macro.Archers = iv != 0; break;
+                    case "maxgiants": s.Macro.MaxGiants = iv; break;
+                    case "gianttowerhp": s.Macro.GiantTowerHp = iv; break;
                     default:
                         if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
                         break;

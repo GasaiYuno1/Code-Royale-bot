@@ -514,6 +514,8 @@ case "esitedist": s.Macro.EnemySiteDist = iv; break;
 case "esitemines": s.Macro.EnemySiteMines = iv != 0; break;
 case "lowhptowers": s.Macro.LowHpTowers = iv; break;
 case "archers": s.Macro.Archers = iv != 0; break;
+case "maxgiants": s.Macro.MaxGiants = iv; break;
+case "gianttowerhp": s.Macro.GiantTowerHp = iv; break;
 default:
 if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
 break;
@@ -798,6 +800,8 @@ public int NearSites = 3;
 public int NearOwn = 2;
 public int BarracksSites = 2;
 public int GiantWhenTowers = 2;
+public int GiantTowerHp = 200;
+public int MaxGiants = 2;
 public int GiantSaveTurns = 15;
 public int LowHpRush = 0;
 public int GiantMinLeft = 40;
@@ -836,10 +840,11 @@ if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || s
 if (gold >= CreepStats.Cost[1]) { _train.Add(st.Id); gold -= CreepStats.Cost[1]; }
 }
 }
-int enemyTowers = 0;
-if (Consts.MaxTurns - s.Turn >= GiantMinLeft)
+int enemyTowers = 0, myGiants = 0;
+for (int i = 0; i < s.CreepCount[me]; i++) if (s.Creeps[me][i].Type == 2) myGiants++;
+if (Consts.MaxTurns - s.Turn >= GiantMinLeft && myGiants < MaxGiants)
 for (int i = 0; i < s.Sites.Length; i++)
-if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
+if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me && s.Sites[i].Hp >= GiantTowerHp) enemyTowers++;
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
@@ -929,7 +934,7 @@ int knightBarracks = 0, giantBarracks = 0, archerBarracks = 0, enemyTowers = 0, 
 for (int i = 0; i < s.Sites.Length; i++)
 {
 SimSite st = s.Sites[i];
-if (st.Structure == StructureType.Tower && st.Owner != me) enemyTowers++;
+if (st.Structure == StructureType.Tower && st.Owner != me && st.Hp >= GiantTowerHp) enemyTowers++;
 if (st.Owner != me) continue;
 if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarracks++; else if (st.CreepType == 2) giantBarracks++; else archerBarracks++; }
 else if (st.Structure == StructureType.Mine) income += st.Rate;

@@ -113,6 +113,7 @@ def main():
     ap.add_argument("--decay", type=float, default=30.0, help="k_decay = decay/(iter+decay)")
     ap.add_argument("--cscale", type=float, default=1.0, help="множитель возмущения c")
     ap.add_argument("--seed", type=int, default=1)
+    ap.add_argument("--only", default="", help="возмущать только эти ключи через запятую (остальные держать на старте)")
     ap.add_argument("--panel", default="", help="соперники-регуляризаторы через |: key=value каждого (пусто = только self-play); '' в списке = умолчания сборки")
     ap.add_argument("--panel-weight", type=float, default=0.5, help="доля партий и веса градиента на панель (остальное — θ+ против θ−)")
     ap.add_argument("--start", help="json с θ, с которого начать (вместо умолчаний)")
@@ -134,6 +135,8 @@ def main():
         print(f"{w:.1f}/{n} = {100.0 * w / n:.1f}% vs reference: {fmt(theta)}")
         return
 
+    only = set(k for k in args.only.split(',') if k)
+    for k in only: assert k in PARAMS, k
     rng = random.Random(args.seed)
     state_path = OUT / "state.json"
     if args.resume and state_path.exists():
@@ -151,7 +154,7 @@ def main():
     pw = args.panel_weight if panel else 0.0
 
     while it < args.iters:
-        delta = {k: rng.choice((-1.0, 1.0)) for k in PARAMS}
+        delta = {k: (rng.choice((-1.0, 1.0)) if (not only or k in only) else 0.0) for k in PARAMS}
         plus = clip({k: theta[k] + args.cscale * PARAMS[k][1] * delta[k] for k in PARAMS})
         minus = clip({k: theta[k] - args.cscale * PARAMS[k][1] * delta[k] for k in PARAMS})
         t0 = time.time()

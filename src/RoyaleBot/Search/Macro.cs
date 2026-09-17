@@ -13,6 +13,8 @@ namespace Royale
         public int NearOwn = 2;            // сколько ближайших своих сайтов предлагать под прокачку / замену
         public int BarracksSites = 2;      // казармы предлагаются только на стольких ближайших свободных сайтах
         public int GiantWhenTowers = 2;    // от скольких чужих башен нужны гиганты
+        public int GiantTowerHp = 200;     // ...считаются только башни не ниже этого HP: свежую башню в 100 HP гиганты и так снесут (ключ gianttowerhp)
+        public int MaxGiants = 2;          // живых своих гигантов не больше — дальше золото рыцарям (ключ maxgiants; арена: по 5 гигантов за партию, противник в локдауне перестраивал башню до 91 раза)
         public int GiantSaveTurns = 15;    // копить на гиганта только если хватит за столько ходов при текущем доходе
         public int LowHpRush = 0;          // чужая королева не выше этого HP: не копим на гигантов и не фильтруем волну — добиваем рыцарями (ключ lowhp; 20 спасло партию с противником на 12 HP за 3 башнями, но против эталона 3:7 вместо 6:4 на тех же сидах — выключено)
         public int GiantMinLeft = 40;      // гигантов не тренируем и не копим на них, когда до конца партии меньше ходов (стройка 10 + ход 50/ход; исход решает HP, не башни)
@@ -56,10 +58,11 @@ namespace Royale
                         if (gold >= CreepStats.Cost[1]) { _train.Add(st.Id); gold -= CreepStats.Cost[1]; }
                     }
             }
-            int enemyTowers = 0;
-            if (Consts.MaxTurns - s.Turn >= GiantMinLeft)
+            int enemyTowers = 0, myGiants = 0;
+            for (int i = 0; i < s.CreepCount[me]; i++) if (s.Creeps[me][i].Type == 2) myGiants++;
+            if (Consts.MaxTurns - s.Turn >= GiantMinLeft && myGiants < MaxGiants)
                 for (int i = 0; i < s.Sites.Length; i++)
-                    if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me) enemyTowers++;
+                    if (s.Sites[i].Structure == StructureType.Tower && s.Sites[i].Owner != me && s.Sites[i].Hp >= GiantTowerHp) enemyTowers++;
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
@@ -158,7 +161,7 @@ namespace Royale
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
-                if (st.Structure == StructureType.Tower && st.Owner != me) enemyTowers++;
+                if (st.Structure == StructureType.Tower && st.Owner != me && st.Hp >= GiantTowerHp) enemyTowers++;
                 if (st.Owner != me) continue;
                 if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarracks++; else if (st.CreepType == 2) giantBarracks++; else archerBarracks++; }
                 else if (st.Structure == StructureType.Mine) income += st.Rate;
