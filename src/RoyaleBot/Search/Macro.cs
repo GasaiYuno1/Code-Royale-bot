@@ -17,6 +17,7 @@ namespace Royale
         public int LowHpRush = 0;          // чужая королева не выше этого HP: не копим на гигантов и не фильтруем волну — добиваем рыцарями (ключ lowhp; 20 спасло партию с противником на 12 HP за 3 башнями, но против эталона 3:7 вместо 6:4 на тех же сидах — выключено)
         public int GiantMinLeft = 40;      // гигантов не тренируем и не копим на них, когда до конца партии меньше ходов (стройка 10 + ход 50/ход; исход решает HP, не башни)
         public int SecondBarracksIncome = 6;
+        public bool Archers = true;        // лучники против гигантов (10 урона гиганту за ход, пара за 100): казарма при чужой казарме гигантов, тренировка при живых гигантах (ключ archers)
         public int EnemySites = 2;         // ближайшие чужие шахты/казармы (не башни): королева сносит их касанием — цель для похода (ключ esites)
         public int EnemySiteDist = 1200;   // ...не дальше этого от моего дома (ключ esitedist)
         public bool EnemySiteMines = true; // сносить и чужие шахты, не только казармы (ключ esitemines)
@@ -24,6 +25,7 @@ namespace Royale
         public int MaxTowersCalm = 3;      // без живых чужих рыцарей новые башни сверх этого не предлагаются
         public int TargetIncome = 6;       // пока доход меньше — фаза экономики: башни только при чужой казарме (до TowersEarly) или живых рыцарях
         public int TowersEarly = 2;
+        public int LowHpTowers = 0;        // не выше этого HP башни предлагаются и в фазе экономики (ключ lowhptowers)
         public int UpgradeCalmBelow = 350; // без живых чужих рыцарей башню качаем только ниже этого HP
         public int FarMineSites = 2;       // всегда добавлять столько ближайших свободных сайтов с золотом (цель для похода)
 
@@ -38,6 +40,22 @@ namespace Royale
         {
             _train.Clear();
             int gold = s.Gold[me];
+            if (Archers)
+            {
+                // лучники: пока живых гигантов противника (и тренирующихся) больше, чем пар лучников у нас
+                int enemyGiants = 0, myArchers = 0;
+                for (int i = 0; i < s.CreepCount[1 - me]; i++) if (s.Creeps[1 - me][i].Type == 2) enemyGiants++;
+                for (int i = 0; i < s.Sites.Length; i++)
+                    if (s.Sites[i].Structure == StructureType.Barracks && s.Sites[i].Owner != me && s.Sites[i].CreepType == 2 && s.Sites[i].Training) enemyGiants++;
+                for (int i = 0; i < s.CreepCount[me]; i++) if (s.Creeps[me][i].Type == 1) myArchers++;
+                if (enemyGiants > 0 && myArchers < 2 * enemyGiants)
+                    for (int i = 0; i < s.Sites.Length; i++)
+                    {
+                        SimSite st = s.Sites[i];
+                        if (st.Structure != StructureType.Barracks || st.Owner != me || st.Training || st.CreepType != 1) continue;
+                        if (gold >= CreepStats.Cost[1]) { _train.Add(st.Id); gold -= CreepStats.Cost[1]; }
+                    }
+            }
             int enemyTowers = 0;
             if (Consts.MaxTurns - s.Turn >= GiantMinLeft)
                 for (int i = 0; i < s.Sites.Length; i++)
@@ -136,15 +154,18 @@ namespace Royale
                 buf[n++] = QueenAction.Move(qx + Dx[d], qy + Dy[d]);
             }
 
-            int knightBarracks = 0, giantBarracks = 0, enemyTowers = 0, income = 0;
+            int knightBarracks = 0, giantBarracks = 0, archerBarracks = 0, enemyTowers = 0, income = 0;
             for (int i = 0; i < s.Sites.Length; i++)
             {
                 SimSite st = s.Sites[i];
                 if (st.Structure == StructureType.Tower && st.Owner != me) enemyTowers++;
                 if (st.Owner != me) continue;
-                if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarracks++; else if (st.CreepType == 2) giantBarracks++; }
+                if (st.Structure == StructureType.Barracks) { if (st.CreepType == 0) knightBarracks++; else if (st.CreepType == 2) giantBarracks++; else archerBarracks++; }
                 else if (st.Structure == StructureType.Mine) income += st.Rate;
             }
+            bool enemyGiantBarracks = false;
+            for (int i = 0; i < s.Sites.Length; i++)
+                if (s.Sites[i].Structure == StructureType.Barracks && s.Sites[i].Owner != me && s.Sites[i].CreepType == 2) { enemyGiantBarracks = true; break; }
             int wantKnightBarracks = 1 + (income >= SecondBarracksIncome ? 1 : 0);
             int myTowers = 0;
             for (int i = 0; i < s.Sites.Length; i++) if (s.Sites[i].Owner == me && s.Sites[i].Structure == StructureType.Tower) myTowers++;
@@ -156,7 +177,8 @@ namespace Royale
             // фазы: экономика (доход < TargetIncome) — башни только по необходимости; дальше до MaxTowersCalm; при рыцарях без ограничений
             bool towersAllowed = knightsAlive
                 || (income >= TargetIncome && myTowers < MaxTowersCalm)
-                || (enemyKnightBarracks && myTowers < TowersEarly);
+                || (enemyKnightBarracks && myTowers < TowersEarly)
+                || (s.Health[me] <= LowHpTowers && myTowers < MaxTowersCalm);   // при низком HP башни с первого хода: первая волна решает партию
 
             // ближайшие свободные сайты (на чужие постройки строить нельзя — предупреждение рефери) и ближайшие свои
             // (прокачка шахты/башни, шахта -> башня при угрозе); раньше брались 4 ближайших любых сайта, и когда все они
@@ -196,6 +218,7 @@ namespace Royale
                     if (Rules.Towers && towersAllowed) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.Tower);
                     if (j < BarracksSites && knightBarracks < wantKnightBarracks) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksKnight);
                     if (j < BarracksSites && Rules.Giants && giantBarracks == 0 && enemyTowers >= GiantWhenTowers) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksGiant);
+                    if (j < BarracksSites && Archers && Rules.Giants && archerBarracks == 0 && enemyGiantBarracks && Consts.MaxTurns - s.Turn >= GiantMinLeft) buf[n++] = QueenAction.BuildAt(st.Id, BuildType.BarracksArcher);
                 }
                 else if (st.Structure == StructureType.Mine)
                 {

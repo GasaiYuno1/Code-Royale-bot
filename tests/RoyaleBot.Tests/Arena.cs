@@ -31,12 +31,15 @@ namespace Royale.Tests
                 else if (arg.StartsWith("a=")) a = arg.Substring(2);
                 else if (arg.StartsWith("b=")) b = arg.Substring(2);
                 else if (arg == "quiet=1") quiet = true;
+                else if (arg.StartsWith("hp=")) FixedHp = int.Parse(arg.Substring(3));
             }
             Rules.League = 4;
             Result r = Play(games, seed, ms, threads, a, b, quiet);
             Console.WriteLine("total a=" + r.A + " b=" + r.B + " d=" + r.D + " games=" + games + " avgturns=" + (games > 0 ? r.Turns / games : 0));
             return 0;
         }
+
+        public static int FixedHp;   // hp=N: фиксированное стартовое HP королев (0 — случайное 25..100)
 
         public static Result Play(int games, int seed, int ms, int threads, string a, string b, bool quiet)
         {
@@ -146,7 +149,7 @@ namespace Royale.Tests
                 s.Sites[i] = st;
             }
             s.Gold[0] = s.Gold[1] = Consts.StartingGold;
-            int hp = rnd.Next(5, 21) * 5;
+            int hp = FixedHp > 0 ? FixedHp : rnd.Next(5, 21) * 5;
             s.Health[0] = s.Health[1] = hp;
             s.QueenX[0] = 200; s.QueenY[0] = 200; s.QueenX[1] = W - 200; s.QueenY[1] = H - 200;
             s.RestoreInitialQueens();

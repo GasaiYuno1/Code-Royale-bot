@@ -51,6 +51,10 @@ namespace Royale
                     case "barlate": w.BarracksLate = iv != 0; break;
                     case "forward": w.Forward = iv != 0; break;
                     case "bars": w.KnightBarracks = iv; break;
+                    case "camp": w.Camp = iv != 0; break;
+                    case "fwdist": w.ForwardDist = iv; break;
+                    case "camphp": w.CampTowerHp = iv; break;
+                    case "campr": w.CampRadius = iv; break;
                     // SearchStrategy
                     case "depth": s.Depth = iv; break;
                     case "width": s.Width = iv; break;
@@ -81,6 +85,8 @@ namespace Royale
                     case "esites": s.Macro.EnemySites = iv; break;
                     case "esitedist": s.Macro.EnemySiteDist = iv; break;
                     case "esitemines": s.Macro.EnemySiteMines = iv != 0; break;
+                    case "lowhptowers": s.Macro.LowHpTowers = iv; break;
+                    case "archers": s.Macro.Archers = iv != 0; break;
                     default:
                         if (!s.W.Set(key, v)) log.WriteLine("unknown key: " + key);
                         break;

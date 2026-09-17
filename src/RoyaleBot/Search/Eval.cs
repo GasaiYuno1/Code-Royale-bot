@@ -10,12 +10,14 @@ namespace Royale
         public double EnemyHp = 70;         // HP противника
         public double LowHp = 3.2;            // квадратичный штраф ниже LowHpLevel: LowHp × (LowHpLevel − HP)² — при старте с 25 HP одна волна = половина жизни, линейная цена HP этого не видит
         public int LowHpLevel = 40;
+        public int LowHpThreat = 0;         // не выше этого HP угроза (Readiness, Cover, TowerNeeded) считается постоянной (ключ lowhpthreat)
         public double Dead = 1e6;           // смерть королевы
         public double Tower = 0.36;         // HP моей башни (прокачка +96/ход не должна перевешивать поход к сайту)
         public double TowerBase = 130;      // сама башня (существует, с убыванием к концу)
         public double TowerNeeded = 500;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
         public double TowerNeededCalm = 750; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
+        public bool TowerNeedNear = false;  // TowerNeeded только для башен в DefenseRadius от королевы (ключ neednear; зеркало 36% и 34% при 25 HP — выключено)
         public double Exposure = 5;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
         public int SafeRadius = 250;
         public int SafeTowerHp = 100;       // башня считается укрытием (для Exposure) только от этого HP (ключ safehp)
@@ -34,6 +36,8 @@ namespace Royale
         public double FarKnight = 1.0;      // 1 = штраф не зависит от расстояния
         public double Giant = 2;            // HP моего гиганта
         public double EnemyGiant = 2;
+        public double Archer = 4;           // HP своих лучников при живых гигантах противника или его казарме гигантов (иначе ×0.2; ключ archer)
+        public double ArcherBarracks = 800; // своя казарма лучников при чужой казарме гигантов (ключ archerbar)
         public double NoBarracks = 6100;    // нет ни одной казармы рыцарей: половина штрафа снимается по мере подхода к свободному сайту
         public double EconShort = 140;      // за единицу недобора дохода до EconTarget, половина снимается по мере подхода к свободному сайту с золотом на своей половине
         public int EconTarget = 6;
@@ -63,6 +67,8 @@ namespace Royale
                 case "ehp": EnemyHp = v; break;
                 case "lowhpw": LowHp = v; break;
                 case "lowhplevel": LowHpLevel = (int)v; break;
+                case "lowhpthreat": LowHpThreat = (int)v; break;
+                case "neednear": TowerNeedNear = v != 0; break;
                 case "tower": Tower = v; break;
                 case "towerbase": TowerBase = v; break;
                 case "towerneed": TowerNeeded = v; break;
@@ -83,6 +89,8 @@ namespace Royale
                 case "far": FarKnight = v; break;
                 case "giant": Giant = v; break;
                 case "egiant": EnemyGiant = v; break;
+                case "archer": Archer = v; break;
+                case "archerbar": ArcherBarracks = v; break;
                 case "nobar": NoBarracks = v; break;
                 case "econshort": EconShort = v; break;
                 case "econtarget": EconTarget = (int)v; break;
@@ -129,8 +137,9 @@ namespace Royale
                 v += w.Lead * (1 - (double)left / w.LeadTurns) * Math.Tanh((myHp - enHp) / (double)w.LeadScale);
             double towerF = Math.Min(1.0, Math.Max(0.2, left / 40.0));
 
-            int knightBarracks = 0, giantBarracks = 0, barracks = 0, enemyTowers = 0, myTowers = 0;
-            bool enemyKnightsComing = false;
+            int knightBarracks = 0, giantBarracks = 0, archerBarracks = 0, barracks = 0, enemyTowers = 0, myTowers = 0;
+            bool enemyGiantBarracks = false, enemyGiantsAlive = false;
+            bool enemyKnightsComing = s.Health[me] <= w.LowHpThreat;   // при низком HP любая волна смертельна — готовим оборону до появления чужой казармы
             double qx = s.QueenX[me], qy = s.QueenY[me];
             double homeX = me == 0 ? 200 : Consts.WorldWidth - 200, homeY = me == 0 ? 200 : Consts.WorldHeight - 200;
             bool covered = false;
@@ -168,9 +177,10 @@ namespace Royale
                         if (st.Owner == me)
                         {
                             myTowers++;
-                            double baseV = myTowers <= w.TowerNeed ? (enemyKnightsComing ? w.TowerNeeded : w.TowerNeededCalm) : w.TowerBase;
-                            v += (baseV + w.Tower * st.Hp) * towerF;
                             double d2 = SimState.D2(st.X, st.Y, qx, qy);
+                            // «нужные» башни — только рядом с королевой (DefenseRadius): иначе бот ставил три башни где попало, а не кластер у себя
+                            double baseV = myTowers <= w.TowerNeed && (!w.TowerNeedNear || d2 < defR2) ? (enemyKnightsComing ? w.TowerNeeded : w.TowerNeededCalm) : w.TowerBase;
+                            v += (baseV + w.Tower * st.Hp) * towerF;
                             if (!covered && d2 < (double)st.AttackRadius * st.AttackRadius) covered = true;
                             if (d2 < defR2) towerHpNear += st.Hp;
                             if (st.Hp >= w.SafeTowerHp && d2 < safeD2) safeD2 = d2;
@@ -201,7 +211,9 @@ namespace Royale
                             barracks++;
                             if (st.CreepType == 0) knightBarracks++;
                             else if (st.CreepType == 2) giantBarracks++;
+                            else archerBarracks++;
                         }
+                        else if (st.CreepType == 2) enemyGiantBarracks = true;
                         else if (st.CreepType == 0)
                         {
                             enemyKnightsComing = true;
@@ -216,17 +228,20 @@ namespace Royale
             int shortfall = w.EconTarget - income;
             if (shortfall > 0 && dGold != double.MaxValue)
                 v -= w.EconShort * shortfall * (0.5 + 0.5 * Math.Min(1.0, Math.Sqrt(dGold) / w.ShapingDist));
-            if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers && left >= 40) v += w.GiantBarracks;   // в конце партии гиганты не нужны (см. Macro.GiantMinLeft)
+            if (giantBarracks > 0 && knightBarracks > 0 && enemyTowers >= w.GiantWhenTowers && left >= 40) v += w.GiantBarracks;
+            if (archerBarracks > 0 && enemyGiantBarracks && left >= 40) v += w.ArcherBarracks;   // в конце партии гиганты не нужны (см. Macro.GiantMinLeft)
             if (barracks > w.MaxBarracks) v -= w.ExtraBarracks * (barracks - w.MaxBarracks);
             double gold = Math.Min(s.Gold[me], w.GoldCap);
             v += w.Gold * gold * (knightBarracks > 0 ? 1.0 : 0.2);
 
             double eqx = s.QueenX[e], eqy = s.QueenY[e];
+            int myArcherHp = 0;
             for (int i = 0; i < s.CreepCount[me]; i++)
             {
                 SimUnit c = s.Creeps[me][i];
                 if (c.Type == 0) v += w.Knight * c.Health * Closeness(c.X, c.Y, eqx, eqy, w);
                 else if (c.Type == 2) v += w.Giant * c.Health;
+                else myArcherHp += c.Health;
             }
             for (int i = 0; i < s.CreepCount[e]; i++)
             {
@@ -236,8 +251,9 @@ namespace Royale
                     v -= w.EnemyKnight * c.Health;
                     enemyKnightsComing = true;
                 }
-                else if (c.Type == 2) v -= w.EnemyGiant * c.Health;
+                else if (c.Type == 2) { v -= w.EnemyGiant * c.Health; enemyGiantsAlive = true; }
             }
+            v += w.Archer * myArcherHp * (enemyGiantsAlive || enemyGiantBarracks ? 1.0 : 0.2);
             if (enemyKnightsComing && covered) v += w.Cover;
             if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * (w.DefenseNeed - towerHpNear);
             if (enemyKnightsAlive)

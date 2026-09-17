@@ -20,7 +20,11 @@ namespace Royale
         public int KnightZone = 250;        // сайты с чужими рыцарями ближе этого не берём
         public bool BarracksLate;           // имитация босса Bronze: шахты и башни раньше казармы (barlate=1)
         public bool Forward;                // имитация потока (40R15T3 в Gold): казармы рыцарей на свободном сайте ближе всех к центру карты (forward=1)
+        public int ForwardDist = 9999;      // ...но не дальше этого от дома (fwdist=N)
+        public int CampTowerHp = 0;         // в лагере казарму строим только когда сильнейшая башня не ниже (camphp=N)
         public int KnightBarracks = 1;      // сколько казарм рыцарей (bars=N)
+        public bool Camp;                   // имитация Gold-стримера: после казармы королева сидит у своей сильнейшей башни, качает её и строит только рядом (camp=1)
+        public int CampRadius = 600;
 
         private int _homeX = -1, _homeY = -1;
 
@@ -45,10 +49,48 @@ namespace Royale
                 return o;
             }
 
+            if (Camp)
+            {
+                QueenAction camp;
+                if (CampAction(t, out camp)) { o.Queen = camp; return o; }
+            }
+
             BuildType type;
             int idx = ChooseBuild(t, out type);
             if (idx >= 0 && QueenAction.Allowed(type)) o.Queen = QueenAction.BuildAt(t.Sites[idx].Id, type);
             return o;
+        }
+
+        /// <summary>Лагерь: казарма рыцарей уже есть — сидим у сильнейшей своей башни, качаем её до TowerUpgradeBelow, иначе строим шахту/башню на пустом сайте не дальше CampRadius от неё.</summary>
+        private bool CampAction(TurnInput t, out QueenAction act)
+        {
+            int knightBarracks = 0, tower = -1, hp = -1;
+            for (int i = 0; i < t.Sites.Length; i++)
+            {
+                Site s = t.Sites[i];
+                if (s.IsOwnBarracks(UnitType.Knight)) knightBarracks++;
+                if (s.IsOwnTower && s.Param1 > hp) { hp = s.Param1; tower = i; }
+            }
+            act = QueenAction.Wait();
+            if (knightBarracks < KnightBarracks || tower < 0) return false;
+            Site tw = t.Sites[tower];
+            if (tw.Param1 < TowerUpgradeBelow) { act = QueenAction.BuildAt(tw.Id, BuildType.Tower); return true; }
+            int best = -1; double bestD = CampRadius;
+            for (int i = 0; i < t.Sites.Length; i++)
+            {
+                Site s = t.Sites[i];
+                if (!s.IsEmpty) continue;
+                double d = Geom.Dist(s.X, s.Y, tw.X, tw.Y);
+                if (d < bestD) { bestD = d; best = i; }
+            }
+            if (best >= 0)
+            {
+                Site s = t.Sites[best];
+                act = QueenAction.BuildAt(s.Id, Rules.Mines && s.MayHaveGold && t.Income < TargetIncome + 3 ? BuildType.Mine : BuildType.Tower);
+                return true;
+            }
+            act = QueenAction.BuildAt(tw.Id, BuildType.Tower);   // всё занято — качаем до максимума
+            return true;
         }
 
         private QueenAction Retreat(TurnInput t, UnitInfo q, int cx, int cy)
@@ -111,7 +153,10 @@ namespace Royale
                 if (s.IsOwnTower) towers++;
             }
 
-            if (knightBarracks < KnightBarracks && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)) && (knightBarracks == 0 || t.Income >= TargetIncome))
+            int bestTowerHp = 0;
+            foreach (Site s in t.Sites) if (s.IsOwnTower && s.Param1 > bestTowerHp) bestTowerHp = s.Param1;
+            if (knightBarracks < KnightBarracks && !(BarracksLate && (t.Income < TargetIncome || towers < TargetTowers)) && (knightBarracks == 0 || t.Income >= TargetIncome)
+                && bestTowerHp >= CampTowerHp)
             {
                 int i = Forward ? NearestToCenter(t) : Nearest(t, Filter.Empty);
                 if (i >= 0) { type = BuildType.BarracksKnight; return i; }
@@ -130,6 +175,10 @@ namespace Royale
                 {
                     int i = Nearest(t, Filter.Empty);
                     if (i >= 0) { type = BuildType.Tower; return i; }
+                }
+                if (Camp && towers > 0 && bestTowerHp < CampTowerHp)
+                {
+                    for (int i = 0; i < t.Sites.Length; i++) if (t.Sites[i].IsOwnTower && t.Sites[i].Param1 == bestTowerHp) { type = BuildType.Tower; return i; }
                 }
                 int weakest = -1, hp = int.MaxValue;
                 for (int i = 0; i < t.Sites.Length; i++)
@@ -161,6 +210,7 @@ namespace Royale
                 if (!s.IsEmpty) continue;
                 if (Geom.Dist(s.X, s.Y, eq.X, eq.Y) < EnemyZone) continue;
                 if (KnightNear(t, s.X, s.Y, KnightZone)) continue;
+                if (Geom.Dist(s.X, s.Y, _homeX, _homeY) > ForwardDist) continue;
                 double d = Geom.Dist(s.X, s.Y, Consts.WorldWidth / 2, Consts.WorldHeight / 2);
                 if (d < bestD) { bestD = d; best = i; }
             }
