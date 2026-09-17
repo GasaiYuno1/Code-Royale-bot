@@ -103,6 +103,7 @@ def log(msg):
 
 
 def main():
+    global ARENA
     ap = argparse.ArgumentParser()
     ap.add_argument("--iters", type=int, default=80)
     ap.add_argument("--games", type=int, default=300, help="партий на итерацию (θ+ против θ−)")
@@ -137,7 +138,6 @@ def main():
         print(f"{w:.1f}/{n} = {100.0 * w / n:.1f}% vs reference: {fmt(theta)}")
         return
 
-    global ARENA
     ARENA = Path(args.arena)
     print(f'arena: {ARENA}', file=sys.stderr)
     only = set(k for k in args.only.split(',') if k)
