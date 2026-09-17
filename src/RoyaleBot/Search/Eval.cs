@@ -3,27 +3,27 @@ using System.Runtime.CompilerServices;
 
 namespace Royale
 {
-    /// <summary>Веса оценки позиции; все настраиваются через key=value (Program.Tuning). Умолчания — точка SPSA v2 (tools/arena/spsa.py, self-play + панель) с полами обороны towerneed/readiness/eknight (гибрид H1).</summary>
+    /// <summary>Веса оценки позиции; все настраиваются через key=value (Program.Tuning). Умолчания — точка SPSA v4 (12 мс, только оборонные веса, 30-я итерация; 62.4% против точки v2/H1 на 1000 партиях, рефери 18:9:3) поверх точки v2/H1 по остальным весам.</summary>
     public sealed class EvalWeights
     {
-        public double Hp = 130;             // моё HP
+        public double Hp = 183;             // моё HP
         public double EnemyHp = 70;         // HP противника
-        public double LowHp = 3.2;            // квадратичный штраф ниже LowHpLevel: LowHp × (LowHpLevel − HP)² — при старте с 25 HP одна волна = половина жизни, линейная цена HP этого не видит
+        public double LowHp = 4.6;            // квадратичный штраф ниже LowHpLevel: LowHp × (LowHpLevel − HP)² — при старте с 25 HP одна волна = половина жизни, линейная цена HP этого не видит
         public int LowHpLevel = 40;
         public int LowHpThreat = 0;         // не выше этого HP угроза (Readiness, Cover, TowerNeeded) считается постоянной (ключ lowhpthreat)
         public double Dead = 1e6;           // смерть королевы
         public double Tower = 0.36;         // HP моей башни (прокачка +96/ход не должна перевешивать поход к сайту)
         public double TowerBase = 130;      // сама башня (существует, с убыванием к концу)
-        public double TowerNeeded = 500;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
-        public double TowerNeededCalm = 750; // те же башни, пока угрозы нет
+        public double TowerNeeded = 1050;    // первые TowerNeed башен при угрозе (у врага есть казарма рыцарей или рыцари)
+        public double TowerNeededCalm = 720; // те же башни, пока угрозы нет
         public int TowerNeed = 3;
         public bool TowerNeedNear = false;  // TowerNeeded только для башен в DefenseRadius от королевы (ключ neednear; зеркало 36% и 34% при 25 HP — выключено)
         public double ThreatUnit = 0;       // (выключено: зеркало 181:210) масштаб угрозы = суммарное HP чужих рыцарей / ThreatUnit (одна волна = 1), не выше ThreatMax; умножает Exposure и Readiness (ключи threatunit, threatmax; 0 — выключено)
         public double ThreatMax = 3;
-        public double Exposure = 5;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
-        public int SafeRadius = 250;
+        public double Exposure = 5.8;         // за единицу расстояния королевы от безопасного места сверх SafeRadius при угрозе (тюнер 3b: 1 -> 4)
+        public int SafeRadius = 180;
         public int SafeTowerHp = 100;       // башня считается укрытием (для Exposure) только от этого HP (ключ safehp)
-        public double ExposureEta = 0.9;    // штраф Exposure только за ту часть пути до укрытия, которую королева не успеет пройти до подхода ближайшего рыцаря (доля ExposureEta от его пути; 0 — за всё расстояние; self-play 0.8 против 0: 58:40, 0.5 против 0.8: 55:44)
+        public double ExposureEta = 0.71;    // штраф Exposure только за ту часть пути до укрытия, которую королева не успеет пройти до подхода ближайшего рыцаря (доля ExposureEta от его пути; 0 — за всё расстояние; self-play 0.8 против 0: 58:40, 0.5 против 0.8: 55:44)
         public double MineFar = 0.85;        // шахта на расстоянии MineFarDist от дома стоит на эту долю меньше
         public int MineFarDist = 1200;
         public double EnemyTower = 0.5;     // HP чужой башни
@@ -33,7 +33,7 @@ namespace Royale
         public double Gold = 4.6;             // золото в кармане (не больше GoldCap; без казармы ×0.2)
         public int GoldCap = 300;
         public double Knight = 6.25;           // HP моего рыцаря (× близость к чужой королеве)
-        public double EnemyKnight = 10;     // HP чужого рыцаря (тюнер 4 под физику арены, рыцарь 25 HP: 20 -> 15)
+        public double EnemyKnight = 7.7;     // HP чужого рыцаря (тюнер 4 под физику арены, рыцарь 25 HP: 20 -> 15)
         public int KnightReach = 1200;      // дальше этого рыцарь стоит только FarKnight от полного веса (для своих рыцарей — близость к чужой королеве)
         public double FarKnight = 1.0;      // 1 = штраф не зависит от расстояния
         public double Giant = 2;            // HP моего гиганта
@@ -44,8 +44,8 @@ namespace Royale
         public double EconShort = 140;      // за единицу недобора дохода до EconTarget, половина снимается по мере подхода к свободному сайту с золотом на своей половине
         public int EconTarget = 6;
         public int ShapingDist = 1200;
-        public double Readiness = 1.5;        // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed; тюнер 3b: 1.5 -> 3)
-        public int DefenseNeed = 500;
+        public double Readiness = 1.7;        // за каждую недостающую единицу HP своих башен рядом с королевой при угрозе (до DefenseNeed; тюнер 3b: 1.5 -> 3)
+        public int DefenseNeed = 180;
         public int DefenseRadius = 450;
         public double EnemyBarracks = 2000; // передовая чужая казарма рыцарей: штраф линейно убывает до нуля на EnemyBarracksDist от моего дома — поход снести её касанием (ключи ebar, ebardist)
         public int EnemyBarracksDist = 1600;
@@ -55,7 +55,7 @@ namespace Royale
         public double ExtraBarracks = 500;  // каждая казарма сверх MaxBarracks
         public int MaxBarracks = 2;
         public double Cover = 10;          // королева под своей башней, когда есть угроза
-        public double EnemyRange = 320;     // королева в радиусе чужой башни на листе: башня бьёт её каждый ход и дальше горизонта (шахты под чужой башней стоили 13 HP)
+        public double EnemyRange = 425;     // королева в радиусе чужой башни на листе: башня бьёт её каждый ход и дальше горизонта (шахты под чужой башней стоили 13 HP)
         public double Lead = 6500;          // лидерство по HP к концу партии (исход по лимиту ходов решает разница HP): Lead × tanh(разница / LeadScale), нарастает за LeadTurns ходов до конца
         public int LeadScale = 5;
         public int LeadTurns = 60;

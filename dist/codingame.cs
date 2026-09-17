@@ -530,22 +530,24 @@ namespace Royale
 {
 public sealed class EvalWeights
 {
-public double Hp = 130;
+public double Hp = 183;
 public double EnemyHp = 70;
-public double LowHp = 3.2;
+public double LowHp = 4.6;
 public int LowHpLevel = 40;
 public int LowHpThreat = 0;
 public double Dead = 1e6;
 public double Tower = 0.36;
 public double TowerBase = 130;
-public double TowerNeeded = 500;
-public double TowerNeededCalm = 750;
+public double TowerNeeded = 1050;
+public double TowerNeededCalm = 720;
 public int TowerNeed = 3;
 public bool TowerNeedNear = false;
-public double Exposure = 5;
-public int SafeRadius = 250;
+public double ThreatUnit = 0;
+public double ThreatMax = 3;
+public double Exposure = 5.8;
+public int SafeRadius = 180;
 public int SafeTowerHp = 100;
-public double ExposureEta = 0.9;
+public double ExposureEta = 0.71;
 public double MineFar = 0.85;
 public int MineFarDist = 1200;
 public double EnemyTower = 0.5;
@@ -555,7 +557,7 @@ public double EnemyMine = 1.9;
 public double Gold = 4.6;
 public int GoldCap = 300;
 public double Knight = 6.25;
-public double EnemyKnight = 10;
+public double EnemyKnight = 7.7;
 public int KnightReach = 1200;
 public double FarKnight = 1.0;
 public double Giant = 2;
@@ -566,8 +568,8 @@ public double NoBarracks = 6100;
 public double EconShort = 140;
 public int EconTarget = 6;
 public int ShapingDist = 1200;
-public double Readiness = 1.5;
-public int DefenseNeed = 500;
+public double Readiness = 1.7;
+public int DefenseNeed = 180;
 public int DefenseRadius = 450;
 public double EnemyBarracks = 2000;
 public int EnemyBarracksDist = 1600;
@@ -577,7 +579,7 @@ public int GiantWhenTowers = 2;
 public double ExtraBarracks = 500;
 public int MaxBarracks = 2;
 public double Cover = 10;
-public double EnemyRange = 320;
+public double EnemyRange = 425;
 public double Lead = 6500;
 public int LeadScale = 5;
 public int LeadTurns = 60;
@@ -597,6 +599,8 @@ case "towerbase": TowerBase = v; break;
 case "towerneed": TowerNeeded = v; break;
 case "towercalm": TowerNeededCalm = v; break;
 case "exposure": Exposure = v; break;
+case "threatunit": ThreatUnit = v; break;
+case "threatmax": ThreatMax = v; break;
 case "safe": SafeRadius = (int)v; break;
 case "safehp": SafeTowerHp = (int)v; break;
 case "expeta": ExposureEta = v; break;
@@ -668,10 +672,11 @@ if (st.Structure == StructureType.Barracks && st.Owner != me && st.CreepType == 
 }
 bool enemyKnightsAlive = false;
 double knightD2 = double.MaxValue;
+int enemyKnightHp = 0;
 for (int i = 0; i < s.CreepCount[e]; i++)
 if (s.Creeps[e][i].Type == 0)
 {
-enemyKnightsComing = true; enemyKnightsAlive = true;
+enemyKnightsComing = true; enemyKnightsAlive = true; enemyKnightHp += s.Creeps[e][i].Health;
 double kd = SimState.D2(s.Creeps[e][i].X, s.Creeps[e][i].Y, qx, qy);
 if (kd < knightD2) knightD2 = kd;
 }
@@ -770,14 +775,15 @@ enemyKnightsComing = true;
 else if (c.Type == 2) { v -= w.EnemyGiant * c.Health; enemyGiantsAlive = true; }
 }
 v += w.Archer * myArcherHp * (enemyGiantsAlive || enemyGiantBarracks ? 1.0 : 0.2);
+double threat = w.ThreatUnit > 0 ? Math.Min(w.ThreatMax, Math.Max(1.0, enemyKnightHp / w.ThreatUnit)) : 1.0;
 if (enemyKnightsComing && covered) v += w.Cover;
-if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * (w.DefenseNeed - towerHpNear);
+if (enemyKnightsComing && towerHpNear < w.DefenseNeed) v -= w.Readiness * threat * (w.DefenseNeed - towerHpNear);
 if (enemyKnightsAlive)
 {
 double safeD = Math.Sqrt(safeD2);
 double late = safeD - w.SafeRadius;
 if (w.ExposureEta > 0) late -= Math.Sqrt(knightD2) * w.ExposureEta * Consts.QueenSpeed / CreepStats.Speed[0];
-if (late > 0) v -= w.Exposure * late * (1 + Math.Max(0, 80 - myHp) / 40.0);
+if (late > 0) v -= w.Exposure * threat * late * (1 + Math.Max(0, 80 - myHp) / 40.0);
 }
 if (w.Noise > 0) v += (rnd.NextDouble() - 0.5) * w.Noise;
 return v;
